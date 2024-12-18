@@ -5,6 +5,7 @@ use HTML::Parser ();
 use HTML::Tagset ();
 use HTML::Element;
 use HTML::TreeBuilder;
+use HTML::TreeBuilder::Select;
 use URI;
 use Data::Dumper;
 
@@ -48,38 +49,74 @@ while ($f =~ /class.?.?\=.*?\"(.*?)\".*?div.*?class=\"(.*?)\".*?\>(.*?)\<\/div/g
 =cut
 
 my $file = shift @ARGV;
-print "$file\n";
+#print "$file\n";
 
-my $parser = HTML::TreeBuilder->new; 
+my $parser = new HTML::TreeBuilder::Select; 
 
 $parser->parse_file($file) || die "Can't open file $file: $!\n";
 
+my @elements;
+my $tag;
+#@elements = $parser->select("div.info div.adr");
+# xp->findnodes('//@att[.=~ /^v.$/]');
+#
+
+#@elements = $parser->select("div.info");
+
 my @div = $parser->look_down(_tag => 'div', class=>'info');
 
-#my @div = $parser->find_by_tag_name('div');
+=head1 all_attr_values
 
-my $nfo = {};
+  for -> phone, phones phone primary
+
+  street-address
+  adr
+
+  $h->all_attr_names();
+
+=cut
+
+
+my $ent={};
+my $nfo;
 foreach my $el (@div) {
     
     my $css = 'business-name';
     my @tags = $el->look_down(class => $css);
     my $tag;
-    $nfo->{$css} = $tags[0]->as_text;
+    $nfo = {};
+
+    $nfo->{Name} = $tags[0]->as_text;
 
     $css = 'track-visit-website';
     @tags = $el->look_down(class => $css);
     $tag = shift @tags;
-    $nfo->{$css} = (defined $tag) ? $tag->attr('href') : "";
+    $nfo->{Website} = (defined $tag) ? $tag->attr('href') : "";
 
     $css = 'bbb-rating';
     @tags = $el->look_down(class => $css);
     $tag = shift @tags;
-    $nfo->{$css} = (defined $tag) ? $tag->as_text: "";
+    $nfo->{Tags} = (defined $tag) ? "BBB-Accredited" : "";
 
+    #    my $info = $parser->parse($el);
+    #my @el = $info->select("div[class*=phone]");
+    #foreach my $i (@el) {
+    #    print $i->as_text."\n";
+    #}
+
+    #TODO
+    #    my @css = ('phone', 'phones phone primary', 
     $css = 'phone';
     @tags = $el->look_down(class => $css);
     $tag = shift @tags;
-    $nfo->{$css} = (defined $tag) ? $tag->as_text : "";
+    if (defined $tag) {
+        $nfo->{Phone} = $tag->as_text;
+    } else {
+        $css = 'phones phone primary';
+        @tags = $el->look_down(class => $css);
+        $tag = shift @tags;
+        $nfo->{Phone} = (defined $tag) ? $tag->as_text : "";
+    }
 
     #TODO performance
     $css = 'street-address';
@@ -89,14 +126,52 @@ foreach my $el (@div) {
     $css = 'adr';
     @tags = $el->look_down(class => $css);
     my $elsetag = shift @tags;
-    $nfo->{$css} = (defined $tag) ? $tag->as_text : $elsetag->as_text;
+    $nfo->{Address} = (defined $tag) ? $tag->as_text : $elsetag->as_text;
 
     $css = 'locality';
     @tags = $el->look_down(class => $css);
     $tag = shift @tags;
-    $nfo->{$css} = (defined $tag) ? $tag->as_text : "";
+    #$nfo->{$css} = (defined $tag) ? $tag->as_text : "";
+    $tag = $tag->as_text;
 
-    print Dumper(\$nfo);
+    if ($tag =~ /(.*?)\,.?(\w\w).?(\d+)/ ) {
+        ($nfo->{City}, $nfo->{State}, $nfo->{Zip}) = ($1, $2, $3);
+    }
+
+    my $email = $nfo->{'Address'}.'@'.$nfo->{'Name'};
+    $email =~ s/\s//g;
+    $email =~ s/[\.\,]/_/g;
+    $nfo->{'Email'} = $email.".com";
+    $ent->{$nfo->{'Name'}} = $nfo;
+}
+
+#print Dumper(\$ent);
+
+# walk & out csv
+#
+#$VAR1 = \{
+#    'Chiropractic Treatment' => {
+#        'phone' => '',
+#        'track-visit-website' => '',
+#
+my @headers;
+my @sheet;
+foreach my $biz (keys %$ent) {
+
+    if ($#headers <= 0) { 
+        foreach my $itm (sort keys %{$ent->{$biz}}) {
+            push @headers, $itm;
+        }
+        #print join(',', @headers);
+    }
+    #print "\n";
+
+    my @line;
+    foreach my $itm (sort keys %{ $ent->{$biz} }) {
+      push @line, "\"".$ent->{$biz}->{$itm}."\"";
+    }
+    print join(',',@line); 
+print "\n";
 }
 
 
