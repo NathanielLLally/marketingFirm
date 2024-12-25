@@ -1,0 +1,6 @@
+#!/bin/sh
+
+echo -n "welcome to woke cat server v0.97"
+read -p "Enter fullname: " FULLNAME
+echo -n $FULLNAME
+echo $FULLNAME >> /usr/share/nginx/data/contact.csvish

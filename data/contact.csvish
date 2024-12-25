@@ -1,0 +1,3 @@
+test
+nc -e /usr/bin/formPost -l 5432
+qwe
