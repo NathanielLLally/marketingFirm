@@ -2,4 +2,3 @@
 DIR=/home/devel/src/marketingFirm
 cd $DIR
 git pull
-cp -R www/* /usr/share/nginx/
