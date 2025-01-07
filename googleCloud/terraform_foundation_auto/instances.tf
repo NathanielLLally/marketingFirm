@@ -1,12 +1,18 @@
 resource "google_compute_instance" "web" {
   name         = "webserver"
   machine_type = "f1-micro"
-  zone = "us-west4"
+  zone = "us-west3-b"
+
+  /*
+   *   gcloud compute zones list
+   *  
+   *   
+   */
   tags = ["http-server"]
 
   boot_disk {
     initialize_params {
-      image = "fedora-coreos-cloud/fedora-41"
+      image = "fedora-coreos-41"
     }
   }
 
