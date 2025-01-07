@@ -1,8 +1,7 @@
 resource "google_compute_instance" "web" {
   name         = "webserver"
   machine_type = "f1-micro"
-
-  zone = "us-west-8"
+  zone = "us-west8"
   tags = ["http-server"]
 
   boot_disk {
