@@ -2,3 +2,6 @@
 DIR=/home/devel/src/marketingFirm
 cd $DIR
 git pull
+DIR=/home/devel/src/git/rlsepp_web
+cd $DIR
+git pull
