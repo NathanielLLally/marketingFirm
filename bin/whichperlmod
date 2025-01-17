@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+#
+# $Id: whichperlmod 19201 2015-04-03 14:33:23Z nxl7494 $
+#
+
+use strict;
+use warnings;
+use File::Spec; #let's be cross platform
+use Cwd;
+
+####################################################################################
+
+our ($Gfile, @Gpath);
+
+while ($#ARGV > -1) {
+  my $fqdn = shift @ARGV;
+
+#  take perl namespace syntax convert to more usable
+#
+  @Gpath = split(/::/,$fqdn);
+  $Gfile = (pop @Gpath) . ".pm";
+
+  my $success = 0;
+
+# look for the file
+#
+  foreach my $dir (@INC) {
+
+    if ($dir eq '.') {
+      $dir = getcwd;  
+    }
+    my $absFile = File::Spec->catfile($dir, @Gpath, $Gfile);
+    if (-e $absFile) {
+      $success = 1;
+      print "$absFile\n";
+    }
+  }
+
+# act like which
+#
+  if (not $success) {
+    print "no ".File::Spec->catfile(@Gpath, $Gfile)." found in (".join(":", @INC).")\n";
+  }
+}
+
+=head1 NAME
+
+  whichperlmod
+
+=head1 USAGE
+
+  whichperlmod Rosalind::Debug Rosalind::Utils::GoogleAPI
+
+=head1 DESCRIPTION
+
+  which for perl modules
+  (look in @INC for Foo::Bar)
+
+=head1 AUTHOR
+
+  Nathaniel Lally 4/3/2015
+
+=cut
+
