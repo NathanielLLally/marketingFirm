@@ -2,6 +2,7 @@
 use warnings;
 
 use Net::DNS::Async::Simple;
+use Net::DNS::DomainName;
 #use Test::More;
 #my $list = [
 #    {   query => ['www.realms.org','A'],
@@ -29,12 +30,26 @@ my $list = [];
 while (<$FD>) {
   chomp;
   push @$list, { query => [$_, 'A'], nameServers => ['8.8.8.8', '8.8.4.4'] };
+  push @$list, { query => [$_, 'MX'], nameServers => ['8.8.8.8', '8.8.4.4'] };
 }
 
+
+
 Net::DNS::Async::Simple::massDNSLookup($list);
+no warnings;
+my $name = '';
 foreach my $el (@$list) {
   if (exists $el->{address}) {
-    print $el->{name}."\n";
+    print "\n";
+    print $el->{name};
+  }
+  if (@{$el->{query}}[1] eq 'MX') {
+    my @list;
+    #    print @{$el->{query}}[1];
+    my $e = $el->{NetDNSAnswer}->{exchange};
+    print ",".join(".",@{$e->{label}},@{$e->{origin}->{label}})."\n";
+    #print ",".join(".",@{$el->{NetDNSAnswer}->{exchange}->{origin}->{label}})."\n";
+    print Dumper($el->{NetDNSAnswer}->{exchange});
   }
 }
 
