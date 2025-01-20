@@ -15,17 +15,12 @@ use Data::Serializer;
 use JSON;
 use Carp qw(croak cluck longmess shortmess);
 
+#
+#  GLOBALS
+#
+my ($pageTotalN, $pageN, $pageTotal) = (0,30); 
+
 my $oDS = Data::Serializer->new();
-
-=head2
-                        serializer => 'Storable',
-                        digester   => 'MD5',
-                        cipher     => 'DES',
-                        secret     => 'my secret',
-                        compress   => 1,
-                      );
-
-=cut
 
 my $URI = URI::Encode->new( { encode_reserved => 0 } );
 
@@ -75,10 +70,7 @@ $pua->duplicates(1);  # ignore duplicates
 $pua->timeout   (20);  # in seconds
 $pua->redirect  (1);  # follow redirects
 
-my @u = ();
-push @u, $url[0];
-
-foreach my $k (@u) {
+foreach my $k (@url) {
   print "Registering '".$k."'\n";
   if ( my $res = $pua->register (HTTP::Request->new(GET=>$k)) ) { 
     print STDERR $res->error_as_HTML; 
@@ -127,41 +119,32 @@ foreach (keys %$entries) {
     my $filename = runCmd('parseURL.pl --output=query',$res->request->url);
     chomp $filename;
     chop $filename;
-    $filename = quotemeta($filename.".stobj");
+    my $link =$filename;
+    $filename = quotemeta($filename.".html");
     my $sv = $res->decoded_content();
-    my @cmd = qw(html5debug);
-    #my $out = runCmd("html5debug --output=parser:json", \$sv);
-    my $out = runCmd("html5debug", \$sv);
 
-    print "[$filename]\n";
+    open(FH, ">./data/$filename") || die "cannot open $filename for write";
+    print FH $sv;
+    close(FH);
 
-    #{root{attributes[{}],children[{
+    # pagination values
+    # Showing 1-30 of 1963More info
 
-    my $h = decode_json($out);
-    print Dumper($h->{root}->{children});
-    exit;
-    my $svH = $oDS->deserialize($out);
-    print Dumper(\$svH);
+    #  TODO performant performance
+    #
+    if ($sv =~ /Showing 1\-30 of (\d+)/) {
+      $pageTotalN = $1;
+      $pageTotal = int($pageTotalN / $pageN)+1;
+    }
 
-
-    store \$out, "./data/$filename";
-    #my %hash = ($out);
-    #print Dumper(\%hash);
-exit;
-
-=head2 
-
-        while ($line =~ /(.*?)\n/gmc) {
-            my $link = $1;
-
-            #TODO pagination
-
-            if ( my $res = $pua->register (HTTP::Request->new(GET=>$link)) ) { 
-                print STDERR $res->error_as_HTML; 
-            }  
-        }
-=cut
-
+    foreach my $n (2..$pageTotal) {
+      $link =~ s/page=\d+/page=$n/;
+      print "$link\n";
+      
+      #if ( my $res = $pua->register (HTTP::Request->new(GET=>$link)) ) { 
+      #  print STDERR $res->error_as_HTML; 
+      #}  
+    }
 }
 
 exit;
