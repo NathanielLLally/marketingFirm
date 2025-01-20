@@ -1,3 +1,13 @@
+#/bin/sh
+
+USER=devel
+TOP=/home/$USER/src/git/marketingFirm
+PWD=$TOP
+
+mkdir /home/$USER/bin
+cd /home/$USER/bin
+ln -s $TOP/parsers/*.pl .
+
 #Debian Based
 sudo apt install libcrypt-ssleay-perl
 sudo apt install libssl-dev

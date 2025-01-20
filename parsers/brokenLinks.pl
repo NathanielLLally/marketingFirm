@@ -103,7 +103,10 @@ foreach (keys %$entries) {
       print STDERR $res->error_as_HTML; 
     }  
   }
- exit; 
+
+  #
+ exit;
+
 }
 
 #

@@ -16,7 +16,7 @@ while (<$FD>) {
   chomp;
   push @domain, $_;
   if ($#domain == 4) {
-    my $query = map { "domain=$_" } @domain;
+    my $query = join("&", map { "domain=$_" } @domain);
     print "$url$query\n";
     @domain = ();
   }

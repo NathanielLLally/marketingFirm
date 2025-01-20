@@ -62,7 +62,6 @@ print Dumper(\%phoneByWebsite);
   #$sth->execute ("DBI rocks!", 1);
   $sth->finish;
 
-$dbh->disconnect;
 
 my $pua = LWP::Parallel::UserAgent->new();
 $pua->in_order  (0);  # handle requests in order of registration
@@ -75,6 +74,14 @@ foreach my $k (keys %phoneByWebsite) {
   if ( my $res = $pua->register (HTTP::Request->new(GET=>$k)) ) { 
     print STDERR $res->error_as_HTML; 
   }  
+
+  #
+  #  output from parseURL  parseURL.pl --output=domain 
+  # TODO: add https://data.domainrank.io/outbound_domains?$lookUp  
+  #
+  #if ( my $res = $pua->register (HTTP::Request->new(GET=>$k)) ) { 
+  #  print STDERR $res->error_as_HTML; 
+  #}  
 }
 my $entries = $pua->wait();
 
@@ -92,21 +99,22 @@ foreach (keys %$entries) {
 
   foreach my $line ($out) {
     chomp $line;
-    print "\n\n$line\n\n";
+    while ($line =~ /(.*?)\n/gmc) {
+        my $link = $1;
+        #    print "\n\n**************$link**************\n\n";
     if (not exists $linktreeByWebsite{$res->request->url}) {
       $linktreeByWebsite{$res->request->url} = {};
     }
-    $websiteByLink{$line} = $res->request->url;
-    $linktreeByWebsite{$res->request->url}{$line}++;
+    $websiteByLink{$link} = $res->request->url;
+    $linktreeByWebsite{$res->request->url}{$link}++;
 
-    if ( my $res = $pua->register (HTTP::Request->new(GET=>$line)) ) { 
+    if ( my $res = $pua->register (HTTP::Request->new(GET=>$link)) ) { 
       print STDERR $res->error_as_HTML; 
     }  
   }
+  }
 
   #
- exit;
-
 }
 
 #
@@ -114,11 +122,33 @@ foreach (keys %$entries) {
 #
 $entries = $pua->wait();
 
+#  TODO:
+#     some markup for an email
 foreach (keys %$entries) {
   my $res = $entries->{$_}->response;
 
   print "Answer for '",$res->request->url, "' was \t", $res->code;
+
   $linktreeByWebsite{ $websiteByLink{$res->request->url} }{$res->request->url} = $res->code;
+
+}
+
+#$dbh->do ("CREATE TABLE  (phone CHAR (10),)");
+       # Updates
+       #        my $sth = $dbh->prepare ("UPDATE foo SET name = ? WHERE id = ?");
+       #$sth->execute ("DBI rocks!", 1);
+       #$sth->finish;
+
+foreach my $url (keys %linktreeByWebsite) {
+  open(OUT, ">>data/$url");
+  
+  print OUT "\n".$phoneByWebsite{$url}; 
+
+  foreach my $link (@{$linktreeByWebsite{$url}}) {
+    print OUT $link.",".$linktreeByWebsite{$url};  
+  }
+  close OUT;
 }
 
 print Dumper(\%linktreeByWebsite);
+$dbh->disconnect;
