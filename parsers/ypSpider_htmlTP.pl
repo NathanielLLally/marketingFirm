@@ -20,7 +20,7 @@ use Carp qw(croak cluck longmess shortmess);
 #
 my ($pageTotalN, $pageN, $pageTotal) = (0,30); 
 
-my $oDS = Data::Serializer->new();
+#my $oDS = Data::Serializer->new();
 
 my $URI = URI::Encode->new( { encode_reserved => 0 } );
 
