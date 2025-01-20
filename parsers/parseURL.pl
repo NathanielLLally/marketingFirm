@@ -5,13 +5,18 @@ use warnings;
 
 use URI::Find;
 use URI;
+use URI::Encode;
 use URI::Escape;
 #use URI::Info;
+use URI::Simple;
 use Data::Dumper;
 use Getopt::Long;
+use Tie::IxHash;
 
 my %url;
 my %urlParts;
+
+my $URI = URI::Encode->new( { encode_reserved => 0 } );
 
 #$SIG{__DIE__} = sub {
 #  print "die hook\n";
@@ -27,7 +32,7 @@ GetOptions ("count" => \$Pcount,
 );
 
 if (defined $Phelp) {
- print "output (url,fqdn,query,path,scheme)\n";
+ print "output (url,fqdn,query,params,path,scheme)\n";
  exit;
 }
 
@@ -74,15 +79,52 @@ foreach my $k (keys %url) {
   #
   #  see URI pod, section PARSING URIs WITH REGEXP
   #
-
      if ($k =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|) {
        $urlParts{$k} = {
          scheme => $1, 
          authority => $2,  fqdn => $2, 
-         path => $3, query => $4, 
+         path => $3, 
+         query => $4, 
          fragment => $5, 
          url => $k
        };
+       my $q = $4;
+       my $u = URI->new($k);
+
+       # TODO: HACK - bitch at them or submit a patch
+       #
+       #Copyright 1995-2009 Gisle Aas.
+       #Copyright 1995 Martijn Koster.
+       #
+       #  libwww-perl
+       #
+       $urlParts{$k}{'paramk'} = ();
+       my %p;
+       tie %p, 'Tie::IxHash';
+       my @keys = $u->query_param;
+       foreach (@keys) {
+         if ($_ !~ /^\s/) {
+           push @{$urlParts{$k}{'paramk'}},$_;
+         }
+      }
+       my @k = @{$urlParts{$k}{'paramk'}};
+       my ($last,$first,$next) = $k[-1];
+       foreach my $i (0..($#k - 1)) {
+         ($first, $next) = ($k[$i], $k[$i+1]);
+         $q =~ /$first\=(.*?)\&?$next/;
+         $urlParts{$k}{'params'}{$first} = uri_escape($1);
+         $p{$first} = uri_escape($1);
+       }
+       $q =~ /$last\=(.*)\&?/;
+       $p{$last} = uri_escape($1);
+       $urlParts{$k}{'params'} = \%p;
+     
+       my @q;
+       foreach my ($k, $v) ( %{$urlParts{$k}{'params'}} ) {
+         push @q, "$k\=$v";
+       }
+       $urlParts{$k}{'query'} = join("&", @q);
+
        my @parts = split(/\./,$urlParts{$k}{fqdn});
 
        $urlParts{$k}{host} = shift @parts if ($#parts > 1);
@@ -100,7 +142,11 @@ foreach my $k (keys %urlParts) {
   print "-> $k\n" if (defined $Pverbose);
   foreach my $el (@Poutput) {
     if (defined $el and exists $urlParts{$k}{$el}) {
-      print $urlParts{$k}{$el}."\n";
+      if ($el eq 'params' or $el eq 'paramk') {
+        print Dumper($urlParts{$k}{$el});
+      } else {
+        print $urlParts{$k}{$el}."\n";
+      }
     }
   }
   print "\n";# if (defined $Pverbose);
