@@ -24,3 +24,6 @@ IO::Socket::SSL
 LWP::Parallel
 URI::Encode
 JSON
+URI::Find
+URI::Simple
+Tie::IxHash

@@ -38,6 +38,7 @@ sudo -iu devel
 git config --global user.email "nathaniel.lally@gmail.com"
 git config --global user.name "NathanielLLally"
 #resolve conflict -> merge
+# per repository
 git config pull.rebase false
 
 
@@ -50,7 +51,7 @@ chmod 600 ~/.ssh/authorized_keys
 #obtain path from
 WWWPATH=`rpm -ql nginx | grep index.html | perl -e 'my $l = <STDIN>; $l =~ /(\/.*)index.html/ && print "$1\n"'`
 
-cp /usr/share/nginx/
+cd /usr/share/nginx/
 
 #  yeeeaaaahhh 'git comment'
 #cp -R src/marketingFirm/www/* /usr/share/nginx/

@@ -1,5 +1,4 @@
-#!/usr/bin/perl
-
+#!/usr/bin/perl -w 
 use strict;
 use HTML::Parser ();
 use HTML::Tagset ();
@@ -9,11 +8,8 @@ use HTML::TreeBuilder::Select;
 use URI;
 use Data::Dumper;
 
-
 #https://www.yellowpages.com/search?search_terms=%20Home%20Improvement%20%26%20Remodeling&geo_location_terms=Las%20Vegas%2C%20NV%3Fpage%3D2&page=1
-
-
-#use warnings;
+# use warnings;
 #  CSS classes
 #    
 #  business-name
@@ -130,7 +126,7 @@ foreach my $el (@div) {
     $css = 'adr';
     @tags = $el->look_down(class => $css);
     my $elsetag = shift @tags;
-    $nfo->{Address} = (defined $tag) ? $tag->as_text : $elsetag->as_text;
+    $nfo->{Address} = (defined $tag) ? $tag->as_text : ((defined $elsetag) ? $elsetag->as_text : "Cloud 9, Apt 7A, HV");
 
     $css = 'locality';
     @tags = $el->look_down(class => $css);
@@ -177,7 +173,7 @@ foreach my $biz (keys %$ent) {
       push @line, "\"".$ent->{$biz}->{$itm}."\"";
     }
     print join(',',@line); 
-print "\n";
+    print "\n";
 }
 
 
