@@ -9,6 +9,10 @@ use HTML::TreeBuilder::Select;
 use URI;
 use Data::Dumper;
 
+
+#https://www.yellowpages.com/search?search_terms=%20Home%20Improvement%20%26%20Remodeling&geo_location_terms=Las%20Vegas%2C%20NV%3Fpage%3D2&page=1
+
+
 #use warnings;
 #  CSS classes
 #    
@@ -132,13 +136,15 @@ foreach my $el (@div) {
     @tags = $el->look_down(class => $css);
     $tag = shift @tags;
     #$nfo->{$css} = (defined $tag) ? $tag->as_text : "";
-    $tag = $tag->as_text;
+    if (defined $tag) {
+      $tag = $tag->as_text;
 
-    if ($tag =~ /(.*?)\,.?(\w\w).?(\d+)/ ) {
+      if ($tag =~ /(.*?)\,.?(\w\w).?(\d+)/ ) {
         ($nfo->{City}, $nfo->{State}, $nfo->{Zip}) = ($1, $2, $3);
+      }
     }
 
-    my $email = $nfo->{'Address'}.'@'.$nfo->{'Name'};
+    my $email = "bogus_".$nfo->{'Address'}.'@'.$nfo->{'Name'};
     $email =~ s/\s//g;
     $email =~ s/[\.\,]/_/g;
     $nfo->{'Email'} = $email.".com";

@@ -11,7 +11,21 @@ use HTTP::Request;
 use URI::Encode;
 use URI::Escape;
 use Storable qw(store thaw freeze nfreeze);
+use Data::Serializer;
+use JSON;
 use Carp qw(croak cluck longmess shortmess);
+
+my $oDS = Data::Serializer->new();
+
+=head2
+                        serializer => 'Storable',
+                        digester   => 'MD5',
+                        cipher     => 'DES',
+                        secret     => 'my secret',
+                        compress   => 1,
+                      );
+
+=cut
 
 my $URI = URI::Encode->new( { encode_reserved => 0 } );
 
@@ -113,29 +127,26 @@ foreach (keys %$entries) {
     my $filename = runCmd('parseURL.pl --output=query',$res->request->url);
     chomp $filename;
     chop $filename;
-    $filename = quotemeta($filename);
-    #print(Dumper($res->decoded_content()));
+    $filename = quotemeta($filename.".stobj");
     my $sv = $res->decoded_content();
-    my @cmd = qw(html5debug --output=xml);
-    my ($out, $err);
-    run \@cmd, $res->decoded_content(), \$out, \$err, timeout( 10 ) or croak "bleh: $?";
-    print "$out";
-    exit;
-
-    print $sv."\n";
-    exit;
-    my $out = runCmd("html5debug --output=xml", \$sv);
+    my @cmd = qw(html5debug);
+    #my $out = runCmd("html5debug --output=parser:json", \$sv);
+    my $out = runCmd("html5debug", \$sv);
 
     print "[$filename]\n";
-    print Dumper($out);
+
+    #{root{attributes[{}],children[{
+
+    my $h = decode_json($out);
+    print Dumper($h->{root}->{children});
     exit;
+    my $svH = $oDS->deserialize($out);
+    print Dumper(\$svH);
 
 
-    #{root{a$tributes[{}],children[{
-
-    store \$out, "$filename";
-    my %hash = thaw($out);
-    print Dumper(\%hash);
+    store \$out, "./data/$filename";
+    #my %hash = ($out);
+    #print Dumper(\%hash);
 exit;
 
 =head2 
