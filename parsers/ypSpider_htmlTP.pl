@@ -11,7 +11,7 @@ use HTTP::Request;
 use URI::Encode;
 use URI::Escape;
 use Storable qw(store thaw freeze nfreeze);
-use Data::Serializer;
+#use Data::Serializer;
 use JSON;
 use Carp qw(croak cluck longmess shortmess);
 
