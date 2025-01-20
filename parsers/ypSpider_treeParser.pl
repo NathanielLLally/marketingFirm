@@ -67,7 +67,7 @@ printf("cities: %s, categories: %s, total %s\n", $caC, $ciC, $caC * $ciC);
 my $pua = LWP::Parallel::UserAgent->new();
 $pua->in_order  (0);  # handle requests in order of registration
 $pua->duplicates(1);  # ignore duplicates
-$pua->timeout   (20);  # in seconds
+$pua->timeout   (10);  # in seconds
 $pua->redirect  (1);  # follow redirects
 
 foreach my $k (@url) {
@@ -83,6 +83,14 @@ foreach my $k (@url) {
   #  print STDERR $res->error_as_HTML; 
   #}  
 }
+
+#  TODO: performant 
+#  subclass LWP::Parallel::on_return (save, pua->register paginated url)
+#    ,on_connect,on_error
+#
+#  discover throttling times, order of mag or two more instances
+#
+
 my $entries = $pua->wait();
 
 
@@ -146,8 +154,6 @@ foreach (keys %$entries) {
       #}  
     }
 }
-
-exit;
 
 #
 #
