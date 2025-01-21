@@ -80,7 +80,6 @@ my @div = $parser->look_down(_tag => 'div', class=>'info');
 my $ent={};
 my $nfo;
 foreach my $el (@div) {
-    
     my $css = 'business-name';
     my @tags = $el->look_down(class => $css);
     my $tag;
@@ -159,7 +158,6 @@ foreach my $el (@div) {
 my @headers;
 my @sheet;
 foreach my $biz (keys %$ent) {
-
     if ($#headers <= 0) { 
         foreach my $itm (sort keys %{$ent->{$biz}}) {
             push @headers, $itm;
@@ -170,6 +168,7 @@ foreach my $biz (keys %$ent) {
 
     my @line;
     foreach my $itm (sort keys %{ $ent->{$biz} }) {
+      $ent->{$biz}->{$itm} =~ s/\"//g;
       push @line, "\"".$ent->{$biz}->{$itm}."\"";
     }
     print join(',',@line); 

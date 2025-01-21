@@ -32,7 +32,7 @@ GetOptions ("count" => \$Pcount,
 );
 
 if (defined $Phelp) {
- print "output (url,fqdn,query,params,path,scheme)\n";
+ print "output (url,fqdn,query,params,path,scheme,email)\n";
  exit;
 }
 
@@ -52,18 +52,18 @@ my $text = <$FD>;
 
 #my $uriInfo = URI::Info->new();
 my $finder = URI::Find->new(
-        sub {
-            my ($uri) = shift;
-            #            my $u = URI->new(
-            #            my $nfo = $uriInfo->info($uri); 
-            #print "$uri\n";
-            #$uri =~ /(.*?)\,/;
-            #print "$1\n";
+  sub {
+    my ($uri) = shift;
+    #            my $u = URI->new(
+    #            my $nfo = $uriInfo->info($uri); 
+    #print "$uri\n";
+    #$uri =~ /(.*?)\,/;
+    #print "$1\n";
 
-            $url{uri_unescape($uri)}++;
-            #            $url{$nfo->host}++;
-            #            print $nfo->host."\n";
-        }
+    $url{uri_unescape($uri)}++;
+    #            $url{$nfo->host}++;
+    #            print $nfo->host."\n";
+  }
 );
 
 
@@ -86,10 +86,13 @@ foreach my $k (keys %url) {
          path => $3, 
          query => $4, 
          fragment => $5, 
-         url => $k
+         url => $k,
        };
        my $q = $4;
        my $u = URI->new($k);
+       if ($urlParts{$k}{scheme} eq "mailto") {
+         $urlParts{$k}{email} =  $urlParts{$k}{path};
+       }
 
        # TODO: HACK - bitch at them or submit a patch
        #
@@ -98,32 +101,35 @@ foreach my $k (keys %url) {
        #
        #  libwww-perl
        #
-       $urlParts{$k}{'paramk'} = ();
        my %p;
        tie %p, 'Tie::IxHash';
        my @keys = $u->query_param;
-       foreach (@keys) {
-         if ($_ !~ /^\s/) {
-           push @{$urlParts{$k}{'paramk'}},$_;
+       if ($#keys >= 0) {
+         foreach (@keys) {
+           if ($_ !~ /^\s/) {
+             push @{$urlParts{$k}{'paramk'}},$_;
+           }
          }
-      }
-       my @k = @{$urlParts{$k}{'paramk'}};
-       my ($last,$first,$next) = $k[-1];
-       foreach my $i (0..($#k - 1)) {
-         ($first, $next) = ($k[$i], $k[$i+1]);
-         $q =~ /$first\=(.*?)\&?$next/;
-         $urlParts{$k}{'params'}{$first} = uri_escape($1);
-         $p{$first} = uri_escape($1);
+         #print Dumper($urlParts{$k}{'paramk'});
+         my @k = @{$urlParts{$k}{'paramk'}};
+         my ($last,$first,$next) = $k[-1];
+         foreach my $i (0..($#k - 1)) {
+           ($first, $next) = ($k[$i], $k[$i+1]);
+           $q =~ /$first\=(.*?)\&?$next/;
+           $urlParts{$k}{'params'}{$first} = uri_escape($1);
+           $p{$first} = uri_escape($1);
+         }
+         $q =~ /$last\=(.*)\&?/;
+         $p{$last} = uri_escape($1);
+
+         $urlParts{$k}{'params'} = \%p;
+
+         my @q;
+         foreach my ($k, $v) ( %{$urlParts{$k}{'params'}} ) {
+           push @q, "$k\=$v";
+         }
+         $urlParts{$k}{'query'} = join("&", @q);
        }
-       $q =~ /$last\=(.*)\&?/;
-       $p{$last} = uri_escape($1);
-       $urlParts{$k}{'params'} = \%p;
-     
-       my @q;
-       foreach my ($k, $v) ( %{$urlParts{$k}{'params'}} ) {
-         push @q, "$k\=$v";
-       }
-       $urlParts{$k}{'query'} = join("&", @q);
 
        my @parts = split(/\./,$urlParts{$k}{fqdn});
 
