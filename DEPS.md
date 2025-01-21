@@ -13,17 +13,11 @@ sudo apt install libcrypt-ssleay-perl
 sudo apt install libssl-dev
 sudo apt install libz-dev
 
-#perl modules
+#Redhat Based
+sudo dnf install libzstd-devel
 
-DBD::CSV
-Data::Serializer
-IPC::Run
-LWP
-Net::SSLeay
-IO::Socket::SSL
-LWP::Parallel
-URI::Encode
-JSON
-URI::Find
-URI::Simple
-Tie::IxHash
+#perl modules
+#  Tatsuhiko Miyagawa
+#wget Miwigawa's CPAN minus
+
+cpanm DBI Text::CSV_XS DBD::CSV IPC::Run LWP URI::Encode URI::Encod JSON URI::Find URI::Simple Tie::IxHash Net::SSLeay IO::Socket::SSL LWP::Parallel Data::Serializer
