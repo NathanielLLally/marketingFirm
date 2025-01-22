@@ -51,12 +51,57 @@ $dbh = DBI->connect("dbi:CSV:", undef, undef, {
 #        # Simple statements
 #        $dbh->do ("CREATE TABLE foo (id INTEGER, name CHAR (10))");
 
-my $filename = $ARGV[0];
+my ($filename,$file2) = @ARGV;
 $filename =~ s/\.csv//;
-my $sth = $dbh->prepare ("select website from $filename as csv where char_length(csv.website) > 0");
+$file2 =~ s/\.csv//;
+
+my (%uniq,%u,%emailBySite);
+#$uniq{$categories->{email}} = $categories->{website};
+
+#
+#  crawled emails
+#
+my $sth = $dbh->prepare ("select email,website from $filename as csv where char_length(csv.website) > 0");
 $sth->execute;
 $categories = $sth->fetchall_arrayref({});
 
-print Dumper(\$categories);
+#last out first in
+foreach my $el (@$categories) {
+  $uniq{$el->{email}} = $el->{website};
+}
 
-print $#{$categories};
+foreach my $email (keys %uniq) {
+  $emailBySite{$uniq{$email}} = $email;
+  #print "$email,".$uniq{$email}."\n";
+}
+
+#  yellow pages info
+#
+$sth = $dbh->prepare ("select * from $file2 as csv where char_length(csv.website) > 0");
+$sth->execute;
+$categories = $sth->fetchall_arrayref({});
+
+open(UNION, ">union.csv") || die "no write cur dir";
+open(PHONE, ">phone.csv") || die "no write cur dir";
+open(SITE, ">website.csv") || die "no write cur dir";
+foreach my $el (@$categories) {
+  if (exists $emailBySite{$el->{Website}}) {
+    $el->{Email} = $emailBySite{$el->{Website}};
+    print SITE join(',',map { $el->{$_} } sort keys %$el)."\n";
+  } else {
+    print PHONE join(',',map { $el->{$_} } sort keys %$el)."\n";
+  }
+  print UNION join(',',map { $el->{$_} } sort keys %$el)."\n";
+}
+#union -> array
+#$u{$categories->{email}} = ();
+
+#try to pick right "one"
+#$categories->{website};
+
+
+#  $emailBySite{$uniq{$email}} = $email;
+
+close(UNION);
+close(PHONE);
+close(SITE);
