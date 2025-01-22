@@ -23,7 +23,7 @@ my $URI = URI::Encode->new( { encode_reserved => 0 } );
   #exit;
   #};
 
-my ($Pverbose, $Pcount, $Phelp, $Pfile, @Poutput) = (1, (undef) x 2, '' x 1);
+my ($Pverbose, $Pcount, $Phelp, $Pfile, @Poutput) = ((undef) x 3, '' x 1);
 GetOptions ("count" => \$Pcount, 
   "file=s" => \$Pfile,
   "output=s" => \@Poutput,
@@ -148,23 +148,13 @@ foreach my $k (keys %urlParts) {
   print "-> $k\n" if (defined $Pverbose);
   foreach my $el (@Poutput) {
     if (defined $el and exists $urlParts{$k}{$el}) {
-
-      #  handle non-scalar data structures
-      #
       if ($el eq 'params' or $el eq 'paramk') {
         print Dumper($urlParts{$k}{$el});
       } else {
-        print $urlParts{$k}{$el};
-      }
-
-      #  special output delimiter
-      #
-      if ($el eq 'scheme') {
-        print "://";
+        print $urlParts{$k}{$el}."\n";
       }
     }
   }
-
   print "\n";# if (defined $Pverbose);
 }
 
