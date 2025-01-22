@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+package ParsePURI;
 
 use strict;
 use warnings;
@@ -12,45 +12,13 @@ use URI::Simple;
 use Data::Dumper;
 use Getopt::Long;
 use Tie::IxHash;
+use Moose;
 
 my %url;
 my %urlParts;
 
 my $URI = URI::Encode->new( { encode_reserved => 0 } );
 
-#$SIG{__DIE__} = sub {
-#  print "die hook\n";
-  #exit;
-  #};
-
-my ($Pverbose, $Pcount, $Phelp, $Pfile, @Poutput) = ((undef) x 3, '' x 1);
-GetOptions ("count" => \$Pcount, 
-  "file=s" => \$Pfile,
-  "output=s" => \@Poutput,
-  "verbose" => \$Pverbose,
-  "help" => \$Phelp
-);
-
-if (defined $Phelp) {
- print "output (url,fqdn,query,params,path,scheme,email)\n";
- exit;
-}
-
-my $file = $Pfile;
-my $FD = *STDIN;
-
-if (defined $file and -e "$file") {
-  open($FD, "<$file") || die "cannot open $file";
-}
-
-local $/;
-undef $/;
-
-my $text = <$FD>;
-#print "$text\n";
-
-
-#my $uriInfo = URI::Info->new();
 my $finder = URI::Find->new(
   sub {
     my ($uri) = shift;
@@ -154,10 +122,17 @@ foreach my $k (keys %urlParts) {
         print $urlParts{$k}{$el}."\n";
       }
     }
-  }
+ }
   print "\n";# if (defined $Pverbose);
 }
 
-if (defined $Pcount) {
-  print "found $count\n";
+has '_count' => ( is => 'rw', isa => 'Num', default => 0);
+
+sub count {
+    my $s = shift;
+    print "found ".$s->_count."\n";
 }
+
+no Moose;
+__PACKAGE__->meta->make_immutable;
+1;

@@ -23,7 +23,7 @@ my $URI = URI::Encode->new( { encode_reserved => 0 } );
   #exit;
   #};
 
-my ($Pverbose, $Pcount, $Phelp, $Pfile, @Poutput) = (1, (undef) x 2, '' x 1);
+my ($Pverbose, $Pcount, $Phelp, $Pfile, @Poutput) = ((undef) x 3, '' x 1);
 GetOptions ("count" => \$Pcount, 
   "file=s" => \$Pfile,
   "output=s" => \@Poutput,
@@ -154,14 +154,12 @@ foreach my $k (keys %urlParts) {
       if ($el eq 'params' or $el eq 'paramk') {
         print Dumper($urlParts{$k}{$el});
       } else {
+      #  special output delimiters
+        print "?" if ($el eq 'query' and length($urlParts{$k}{$el}));
         print $urlParts{$k}{$el};
+        print "://" if ($el eq 'scheme');
       }
 
-      #  special output delimiter
-      #
-      if ($el eq 'scheme') {
-        print "://";
-      }
     }
   }
 

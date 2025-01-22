@@ -44,6 +44,7 @@ my ($cities, $categories, @url);
 ####################################################3
 $dbh = DBI->connect("dbi:CSV:", undef, undef, {
     f_ext => ".csv/r",
+    f_dir => 'data',
     RaiseError => 1,
   }) or die "cannot connect: $DBI::errstr";
 
