@@ -53,7 +53,14 @@ my $file = shift @ARGV;
 
 my $parser = new HTML::TreeBuilder::Select; 
 
-$parser->parse_file($file) || die "Can't open file $file: $!\n";
+if (-e $file) {
+  $parser->parse_file($file) || die "Can't open file $file: $!\n";
+} else {
+  local $/;
+  undef $/;
+  my $content = <STDIN>;
+  $parser->parse($content) || die "Can't open file $file: $!\n";
+}
 
 my @elements;
 my $tag;
