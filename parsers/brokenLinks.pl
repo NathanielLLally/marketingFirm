@@ -256,30 +256,34 @@ foreach my $el (@$array) {
 
 print "websites in csv $count\n";
 
-foreach my $el (@$array) {
-  my ($csvData,$website) = ($el->{website}, undef);
+my @batch;
+  while (@batch = splice(@$array,0,1000)) {
+  foreach my $el (@$array) {
+    my ($csvData,$website) = ($el->{website}, undef);
 
-  #  using fqdn/path only to match with chattyPUA::on_return
-  #
-  try {
-    $website = iRun::runCmd("parseURL.pl --output=fqdn --output=path", \$csvData);
-    chomp $website;
-  } catch {
-    print "ERROR: register: main ".$csvData."\n";
-    next;
-  };
+    #  using fqdn/path only to match with chattyPUA::on_return
+    #
+    try {
+      $website = iRun::runCmd("parseURL.pl --output=fqdn --output=path", \$csvData);
+      chomp $website;
+    } catch {
+      print "ERROR: register: main ".$csvData."\n";
+      next;
+    };
 
-  print "FIXME finish parsePURI.p[ml] [$csvData] => [$website]\n";
+    #print "FIXME finish parsePURI.p[ml] [$csvData] => [$website]\n";
 
-  print "-->$csvData\n";
-  $pua->setLink($csvData => $csvData);
+    #print "-->$csvData\n";
+    print ".";
+    $pua->setLink($csvData => $csvData);
 
-  if ( my $res = $pua->register (HTTP::Request->new(GET=>$csvData)) ) { 
-    #print STDERR $res->error_as_HTML; 
-  }  
-}
+    if ( my $res = $pua->register (HTTP::Request->new(GET=>$csvData)) ) { 
+      #print STDERR $res->error_as_HTML; 
+    }  
+  }
 
-my $entries = $pua->wait();
+  my $entries = $pua->wait();
+};
 #
 #
 #
