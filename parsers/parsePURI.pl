@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use lib './lib';
 
 use URI::Find;
 use URI;
@@ -51,11 +52,14 @@ my $text = <$FD>;
 #print "$text\n";
 
 
-my $pseudoUniversalResourceIndicator = ParsePURI->new();
+my $pseudoUniversalResourceIndicator = ParsePURI->new(
+	output => \@Poutput,
+	verbose => $Pverbose	
+);
 
-$pseudoUniversalResourceIndicator->main();
+print Dumper($pseudoUniversalResourceIndicator->parse($text));
 
-my $c = $pseudoUniversalResourceIndicator->count();
-if ( $c );
-  print "found $c\n";
-}
+#my $c = $pseudoUniversalResourceIndicator->count();
+#if ( defined $c );
+#  print "found $c\n";
+#}
