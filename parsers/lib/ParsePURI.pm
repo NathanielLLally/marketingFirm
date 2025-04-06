@@ -104,12 +104,16 @@ sub parse
 				my ($last,$first,$next) = $k[-1];
 				foreach my $i (0..($#k - 1)) {
 					($first, $next) = ($k[$i], $k[$i+1]);
-					$q =~ /$first\=(.*?)\&?$next/;
-					$urlParts{$k}{'params'}{$first} = uri_escape($1);
-					$p{$first} = uri_escape($1);
+
+					$q =~ /\Q$first\E\=(.*?)\&?\Q$next\E/;
+                    #$urlParts{$k}{'params'}{$first} = uri_escape($1);
+					$urlParts{$k}{'params'}{$first} = $1;
+                    #$p{$first} = uri_escape($1);
+					$p{$first} = $1;
 				}
-				$q =~ /$last\=(.*)\&?/;
-				$p{$last} = uri_escape($1);
+				$q =~ /\Q$last\E\=(.*)\&?/;
+                #$p{$last} = uri_escape($1);
+				$p{$last} = $1;
 
 				$urlParts{$k}{'params'} = \%p;
 
@@ -120,13 +124,15 @@ sub parse
 				$urlParts{$k}{'query'} = join("&", @q);
 			}
 
-			my @parts = split(/\./,$urlParts{$k}{fqdn});
+            if (defined $urlParts{$k}{fqdn}) {
+                my @parts = split(/\./,$urlParts{$k}{fqdn});
 
-			$urlParts{$k}{host} = shift @parts if ($#parts > 1);
+                $urlParts{$k}{host} = shift @parts if ($#parts > 1);
 
-			$urlParts{$k}{domain} = join('.', @parts); 
-			$urlParts{$k}{tld} = $parts[-1];
-		}
+                $urlParts{$k}{domain} = join('.', @parts); 
+                $urlParts{$k}{tld} = $parts[-1];
+            }
+        }
 		# ) = ($1,$2,$4,$5);
 		#  print "$scheme, $fqdn, $path, $query\n" if (defined $Pverbose);
 	}
