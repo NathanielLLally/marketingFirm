@@ -38,6 +38,8 @@ my ($cities, $categories, @url);
 
 #my $DSN = 'driver={};server=$server_name;database=$database_name;uid=$database_user;pwd=$database_pass;';
 
+
+
 #
 #  combinitorics of categpories by cities
 #
@@ -51,7 +53,15 @@ $dbh = DBI->connect("dbi:CSV:", undef, undef, {
 #        # Simple statements
 #        $dbh->do ("CREATE TABLE foo (id INTEGER, name CHAR (10))");
 
+no warnings;
 my ($filename,$file2) = @ARGV;
+
+unless (-e "data/$filename and -e data/$file2) {
+  print "[src .csv] [dst .csv] | tee output\n";
+  print "will not modify destination csv \n\n";
+  exit;
+}
+use warnings;
 $filename =~ s/\.csv//;
 $file2 =~ s/\.csv//;
 
@@ -67,7 +77,13 @@ $categories = $sth->fetchall_arrayref({});
 
 #last out first in
 foreach my $el (@$categories) {
-  $uniq{$el->{email}} = $el->{website};
+  $el->{email} =~ s/\/$//;
+  my $site = $el->{website};
+  if (defined $site) {
+    $site =~ s/https?:\/\///;
+    $site =~ s/\/.*//;
+    $uniq{$el->{email}} = $site;
+  }
 }
 
 foreach my $email (keys %uniq) {
@@ -84,9 +100,19 @@ $categories = $sth->fetchall_arrayref({});
 open(UNION, ">union.csv") || die "no write cur dir";
 open(PHONE, ">phone.csv") || die "no write cur dir";
 open(SITE, ">website.csv") || die "no write cur dir";
+
+
 foreach my $el (@$categories) {
-  if (exists $emailBySite{$el->{Website}}) {
-    $el->{Email} = $emailBySite{$el->{Website}};
+  my $site = $el->{website};
+  if (defined $site) {
+    $site =~ s/https?:\/\///;
+    $site =~ s/\/.*//;
+    print "$site\n";
+  }
+
+  if (defined $site and exists $emailBySite{$site}) {
+    print "$site\n";
+    $el->{email} = $emailBySite{$site};
     print SITE join(',',map { $el->{$_} } sort keys %$el)."\n";
   } else {
     print PHONE join(',',map { $el->{$_} } sort keys %$el)."\n";
@@ -98,7 +124,6 @@ foreach my $el (@$categories) {
 
 #try to pick right "one"
 #$categories->{website};
-
 
 #  $emailBySite{$uniq{$email}} = $email;
 
