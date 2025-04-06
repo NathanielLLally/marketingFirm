@@ -94,6 +94,7 @@ sub parse
 			tie %p, 'Tie::IxHash';
 			my @keys = $u->query_param;
 			if ($#keys >= 0) {
+                $urlParts{$k}{'paramk'} = ();
 				foreach (@keys) {
 					if ($_ !~ /^\s/) {
 						push @{$urlParts{$k}{'paramk'}},$_;
@@ -111,9 +112,10 @@ sub parse
                     #$p{$first} = uri_escape($1);
 					$p{$first} = $1;
 				}
-				$q =~ /\Q$last\E\=(.*)\&?/;
+                #broken
+				$q =~ /\Q$last\E\=(.*?)\&?/;
                 #$p{$last} = uri_escape($1);
-				$p{$last} = $1;
+                $p{$last} = $1;
 
 				$urlParts{$k}{'params'} = \%p;
 
