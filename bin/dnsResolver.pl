@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 use warnings;
+use strict;
 
 use Net::DNS::Async::Simple;
 use Net::DNS::DomainName;
@@ -17,26 +18,30 @@ use Net::DNS::DomainName;
 use Data::Dumper;
 
 my $file = shift @ARGV;
-my $FD = *STDIN;
 
 if (defined $file and -e "$file") {
-  open($FD, "<$file") || die "cannot open $file";
-} 
+  open(FD, "<$file") || die "cannot open $file";
+} else {
+  die "arg filename";
+}
 
 #print Dumper $adns->synchronous("www.google.com", ADNS_R_A);
 
 my $n = 0;
 my $list = [];
-while (<$FD>) {
+while (<FD>) {
   chomp;
+  #  print "$_\n";
   push @$list, { query => [$_, 'A'], nameServers => ['8.8.8.8', '8.8.4.4'] };
   push @$list, { query => [$_, 'MX'], nameServers => ['8.8.8.8', '8.8.4.4'] };
 }
 
+#close FD;
 
+print " looking up ".$#{$list}." records\n";
 
 Net::DNS::Async::Simple::massDNSLookup($list);
-no warnings;
+#no warnings;
 my $name = '';
 foreach my $el (@$list) {
   if (exists $el->{address}) {
@@ -47,9 +52,26 @@ foreach my $el (@$list) {
     my @list;
     #    print @{$el->{query}}[1];
     my $e = $el->{NetDNSAnswer}->{exchange};
-    print ",".join(".",@{$e->{label}},@{$e->{origin}->{label}})."\n";
+    #        print Dumper($e);
+    my $label;
+    if (exists $e->{'label'}) {
+      $label = join('.', @{$e->{label}});
+    }
+    if (exists $e->{'origin'}) {
+      $label .= '.'.join('.', @{$e->{origin}->{label}});
+      if (exists $e->{'origin'}->{origin}) {
+        $label .= '.'.join('.', @{$e->{origin}->{origin}->{label}});
+        if (exists $e->{'origin'}->{origin}->{origin}) {
+          $label .= '.'.join('.', @{$e->{origin}->{origin}->{origin}->{label}});
+        }
+      }
+    }
+    if (defined $label) {
+    print ",$label";
+  }
     #print ",".join(".",@{$el->{NetDNSAnswer}->{exchange}->{origin}->{label}})."\n";
-    print Dumper($el->{NetDNSAnswer}->{exchange});
   }
 }
+
+print "\n";
 
