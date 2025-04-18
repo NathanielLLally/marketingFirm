@@ -183,6 +183,8 @@ $cv->end;
 print "fetched\n";
 =cut
 
+#my $sth = $dbh->prepare ("select url from pending where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
+
 my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 10");
 
 $sth->execute();
@@ -210,6 +212,7 @@ do {
             $pageTotalN = $2;
             my $newurl = $url;
             $newurl =~ s/\?.*//;
+            $pageTotal = int($pageTotalN / $pageN)+1;
             foreach my $n (2..$pageTotal) {
               try {
                 my $sth = $dbh->prepare ("INSERT into pending (url) values (?) on conflict do nothing");
@@ -218,7 +221,6 @@ do {
               } catch {
               };
             }
-            $pageTotal = int($pageTotalN / $pageN)+1;
           }
         }
         #
@@ -325,7 +327,8 @@ do {
 
   $sth->execute();
   $rs = $sth->fetchall_arrayref({});
-} while ($#{$rs} > -1);
+} while (1 eq 1);
+#while ($#{$rs} > -1);
 $cv->end;
 
 $cv->recv;
