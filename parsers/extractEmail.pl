@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 use warnings;
 use strict;
 use Modern::Perl;
@@ -22,7 +22,6 @@ use HTTP::Cookies;
 use HTTP::Message;
 use HTTP::Headers;
 use Carp qw/croak longmess/;
-use Moose;
 use Try::Tiny;
 use DBI;
 use DBD::CSV;
@@ -32,8 +31,7 @@ use Coro;
 use AnyEvent;
 use Coro::AnyEvent;
 use AnyEvent::HTTP;
-use lib './lib';
-use ParsePURI;
+use PURI;
 use Time::HiRes qw(time gettimeofday tv_interval);
 
 my $cv = AnyEvent->condvar;
@@ -55,9 +53,7 @@ $SIG{HUP} = sub {
   print  "\t\t\t".join '', "$0 @ARGV at ", scalar localtime(), "\n";
 };
 
-my $puri = ParsePURI->new();
-
-my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=192.168.0.140", 'postgres', undef, {
+my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=127.0.0.1", 'postgres', undef, {
       RaiseError => 1,
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
@@ -68,7 +64,7 @@ sub on_return {
   no warnings;
   our $parser = new HTML::TreeBuilder::Select; 
   my ($website, $body, $hdr) = @_;
-  my $h = $puri->parse($website);
+  my $h = PURI::parse($website);
   my @ke = keys %$h;
   my $origin = $h->{$ke[0]}->{fqdn};
 
@@ -96,8 +92,8 @@ sub on_return {
 
           #print Dumper(\$array);
           try {
-            my $sth = $dbh->prepare ("INSERT into email (email,website) values (?,?) on conflict(email,website) do nothing");
-            $sth->execute ($email, $website);
+            my $sth = $dbh->prepare ("INSERT into email (email,website, hdrurl) values (?,?,?) on conflict(email,website) do nothing");
+            $sth->execute ($email, $website, $hdr->{URL});
             $sth->finish;
           } catch {
           };
@@ -108,7 +104,7 @@ sub on_return {
 
     foreach my $el (@a) {
       my $url = lc($el->attr('href'));
-      my $h = $puri->parse($url);
+      my $h = PURI::parse($url);
       my @ke = keys %$h;
       my $fqdn = $h->{$ke[0]}->{fqdn};
 
@@ -123,6 +119,10 @@ sub on_return {
         }
       } 
     }
+  } elsif ($hdr->{Status} == '404') {
+    my $sth = $dbh->prepare ("update pending set resolved = now(),status = ? where url = ?");
+    $sth->execute($hdr->{Status}, $website);
+    $sth->finish;
   }
 
   my $sth = $dbh->prepare ("update pending set resolved = now() where url = ?");
@@ -139,7 +139,6 @@ sub on_return {
 # make csv for importing into postgres
 # also must use iconv to convert to UTF8
 my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 10");
-$sth->execute;
 
 
 my $result;
@@ -152,7 +151,7 @@ sub send_url {
   return if (exists $seen{$u});
 
   #  dont hit individual domains more than x per y (1 per 10 as of now)
-  my $h = $puri->parse($u);
+  my $h = PURI::parse($u);
   my @ke = keys %$h;
   my $fqdn = $h->{$ke[0]}->{fqdn};
   if (not exists $fqcount->{$fqdn}){
@@ -166,8 +165,9 @@ sub send_url {
     $cv->begin;
     $seen{$u} = 1;
     print ".";
-    http_get $u, timeout => 10, 
-    sub { my ($body, $hdr) = @_; on_return($u,$body,$hdr); $count--; $cv->end; send_url() };
+    my $url = $u;
+    http_get $url, timeout => 10, 
+    sub { my ($body, $hdr) = @_; on_return($url,$body,$hdr); $count--; $cv->end; send_url() };
   } else {
     push @urls, $u;
     send_url();
@@ -179,10 +179,6 @@ while ($sth->execute) {
   
   my $batch = $sth->fetchall_arrayref({});
   foreach (@$batch) {
-
-    #my $h = $puri->parse($csvData);
-    #my $k = @{keys %$h}[0];
-    #$website = join('/', $h->{$k}->{fqdn}, $h->{$k}->{path});
 
     push @urls, $_->{url};
     send_url();
