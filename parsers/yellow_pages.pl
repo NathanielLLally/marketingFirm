@@ -57,6 +57,9 @@ my %disperse;
 my @urls;
 my $begin =  join '', "$0 ",@ARGV," at ", scalar localtime(), "\n";
 
+
+my $Pcat = shift @ARGV;
+
 $SIG{HUP} = sub {
   print "process began @\t$begin\n";
   print  "\t\t\t".join '', "$0 @ARGV at ", scalar localtime(), "\n";
@@ -97,7 +100,7 @@ sub send_url {
       } elsif ($hdr->{Status} == 404) {
         print "not found\n";
         try {
-          my $sth = $dbh->prepare ( "update pending set resolved = now(), status = ? where url = ?");
+          my $sth = $dbh->prepare ( "update pending_yp set resolved = now(), status = ? where url = ?");
           $sth->execute ( $hdr->{Status}, $url );
           $sth->finish;
         } catch {
@@ -117,47 +120,47 @@ sub send_url {
 
 $| = 1;
 
-=head2 fetch categories and cities
+if (defined $Pcat) {
 
-$cv->begin;
+  $cv->begin;
 
-my $url = "https://www.yellowpages.com/categories";
-print "fetching categories\n";
-    push @urls, {url => $url, cb => sub {
-        my ($url, $hdr, $parser) = @_;
-        my @a = $parser->look_down(_tag => 'a');
-        foreach my $el (@a) {
-          if ($el->attr('href') =~ /categories\/([\w\-]+)/) {
-            try {
-              print ".";
-              my $sth = $dbh->prepare ("INSERT into yellow_pages_categories (category) values (?) on conflict(category) do nothing");
+  my $url = "https://www.yellowpages.com/categories";
+  print "fetching categories\n";
+  push @urls, {url => $url, cb => sub {
+      my ($url, $hdr, $parser) = @_;
+      my @a = $parser->look_down(_tag => 'a');
+      foreach my $el (@a) {
+        if ($el->attr('href') =~ /categories\/([\w\-]+)/) {
+          try {
+            print ".";
+            my $sth = $dbh->prepare ("INSERT into yellow_pages_categories (category) values (?) on conflict(category) do nothing");
 
-              $sth->execute ($1);
-              $sth->finish;
-            } catch {
-            };
+            $sth->execute ($1);
+            $sth->finish;
+          } catch {
+          };
 
-          }
         }
-        print "fetched\n";
-      }};
-    send_url();
+      }
+      print "fetched\n";
+    }};
+  send_url();
 
-$cv->end;
+  $cv->end;
 
 
-print "\nfetching category cities\n";
+  print "\nfetching category cities\n";
 
-my $sth = $dbh->prepare ("select category from yellow_pages_categories");
-$sth->execute();
-my $rs = $sth->fetchall_arrayref({});
+  my $sth = $dbh->prepare ("select category from yellow_pages_categories");
+  $sth->execute();
+  my $rs = $sth->fetchall_arrayref({});
 
-$cv->begin;
-foreach my $row (@$rs) {
+  $cv->begin;
+  foreach my $row (@$rs) {
     push @urls, {url => sprintf("%s%s",
         "https://www.yellowpages.com/categories/",
         $row->{category}),
-        cb => sub {
+      cb => sub {
         my ($url, $hdr, $parser) = @_;
         my @a = $parser->look_down(_tag => 'a');
         foreach my $el (@a) {
@@ -176,16 +179,23 @@ foreach my $row (@$rs) {
         }
         print "\n";
       }};
-  send_url();
+    send_url();
+  }
+
+  $cv->end;
+  print "fetched\n";
+
+  my $sth = $dbh->prepare("delete from pending_yp");
+  $sth->execute();
+  $sth = $dbh->prepare("insert into pending_yp (url) select concat('https://yellowpages.com',url) from yellow_pages_citycat");
+  $sth->execute();
+
 }
 
-$cv->end;
-print "fetched\n";
-=cut
 
-#my $sth = $dbh->prepare ("select url from pending where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
+#my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
 
-my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and random() < 0.01 limit 10");
 
 $sth->execute();
 my $rs = $sth->fetchall_arrayref({});
@@ -215,7 +225,7 @@ do {
             $pageTotal = int($pageTotalN / $pageN)+1;
             foreach my $n (2..$pageTotal) {
               try {
-                my $sth = $dbh->prepare ("INSERT into pending (url) values (?) on conflict do nothing");
+                my $sth = $dbh->prepare ("INSERT into pending_yp (url) values (?) on conflict do nothing");
                 $sth->execute (sprintf("%s?page=%s",$newurl,$n));
                 $sth->finish;
               } catch {
@@ -297,7 +307,7 @@ do {
             my @vals = map { $nfo->{$_} } @keys;
 
             my $sth = $dbh->prepare (
-              sprintf("INSERT into yellow_pages (%s) values (%s)",
+              sprintf("INSERT into yellow_pages_loading (%s) values (%s)",
                 join(",",@keys), join(",", @q))
             );
 
@@ -311,7 +321,7 @@ do {
         #  done parsing, update crawler pending
         #
         try {
-          my $sth = $dbh->prepare ( "update pending set resolved = now(), status = 200 where url = ?");
+          my $sth = $dbh->prepare ( "update pending_yp set resolved = now(), status = 200 where url = ?");
           $sth->execute ($url);
           $sth->finish;
         } catch {
@@ -327,8 +337,8 @@ do {
 
   $sth->execute();
   $rs = $sth->fetchall_arrayref({});
-} while (1 eq 1);
-#while ($#{$rs} > -1);
+} while ($#{$rs} > -1);
+#} while (1 eq 1);
 $cv->end;
 
 $cv->recv;

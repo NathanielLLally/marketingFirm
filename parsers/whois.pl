@@ -39,7 +39,7 @@ my $disperseTime = 1;
 my $fqcount = {};
 my $maxSameDomain = 10;
 my $maxReqs = 100;
-my $maxQueue = 100;
+my $maxQueue = 101;
 
 my %seen;
 my %disperse;

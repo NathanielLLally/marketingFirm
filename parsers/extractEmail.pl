@@ -39,9 +39,9 @@ my $count = 0;
 
 my $disperseTime = 1;
 my $fqcount = {};
-my $maxSameDomain = 10;
+my $maxSameDomain = 5;
 my $maxReqs = 100;
-my $maxQueue = 100;
+my $maxQueue = 101;
 
 my %seen;
 my %disperse;
@@ -138,7 +138,7 @@ sub on_return {
 #
 # make csv for importing into postgres
 # also must use iconv to convert to UTF8
-my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 100");
 
 
 my $result;
@@ -191,6 +191,7 @@ while ($sth->execute) {
   print "\n**  BATCH ***********************************\n";
 };
 $cv->recv;
+#EV: error in callback (ignoring): Wide character in syswrite at /usr/lib64/perl5/vendor_perl/AnyEvent/Handle.pm line 2291.
 
 
 my $foo = $cv->recv;
