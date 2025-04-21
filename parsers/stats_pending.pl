@@ -117,9 +117,7 @@ print "interval $interval\n";
     cb => sub {
       push @stats, getStats();
       if ($#stats >= $hist) {
-        printf "%u %u\n", $#stats, $hist;
         shift @stats;
-        printf "%u %u\n", $#stats, $hist;
       }
       my $tdiff = tv_interval($stats[0]->{time}, $stats[-1]->{time});
 

@@ -1,15 +1,9 @@
 #!/usr/bin/perl
 use warnings;
 use strict;
-use Modern::Perl;
 use feature 'isa';
 use Try::Tiny;
 use DBI;
-use DBD::CSV;
-use LWP;
-#use LWP::Debug qw(+);
-use Data::Dumper;
-
 use Carp qw/croak longmess/;
 use Try::Tiny;
 use DBI;
@@ -27,8 +21,12 @@ use File::Spec;
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
+if ($dirname =~ /^script/) {
+    $cfgFile = $ENV{HOME}."/.obiseo.conf";
+}
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
+print Dumper(\$CFG);
 
 my $DEBUG = 0;
 
@@ -56,6 +54,23 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
+sub execReconnect
+{
+  my ($sth,@args) = @_;
+  try {
+    $sth->execute(@args);
+  } catch {
+    if ($_ =~ /no connection to the server/) {
+      print "reconnecting to dB\n";
+      $dbh = DBI->connect( $CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass},
+        { RaiseError => 1, }
+      ) or die "cannot connect: $DBI::errstr";
+    } else {
+      print "uncaught error: $_\n";
+    }
+  };
+}
+
 sub send_url {
   return if $count >= $maxReqs;
   my $u = shift @urls;
@@ -70,6 +85,7 @@ sub send_url {
     whois $url, timeout => 10, 
     sub {
       print "returned $url\n";
+      $count--;
       my $data = shift;
       if ($data) {
         my $srv = shift;
@@ -84,7 +100,6 @@ sub send_url {
         print "whois error: $reason";
       }
 
-      $count--;
       $cv->end; 
       send_url() 
     };
@@ -132,7 +147,7 @@ my @q = map { '?' } values %$dbField;
 
 
 my $sth = $dbh->prepare ("select domain from pending_whois where resolved is null and random() < 0.01 limit 10");
-$sth->execute();
+execReconnect($sth);
 my $rs = $sth->fetchall_arrayref({});
 
 $cv->begin;
@@ -174,7 +189,7 @@ do {
             print "$sql\n" if ($DEBUG);
             print join('',map { my $o = $_ || ""; "[$o]"; } @v)."\n" if ($DEBUG);
             my $sth = $dbh->prepare ($sql);
-            $sth->execute (@v);
+            execReconnect($sth,@v);
             my $rs = $sth->fetchall_arrayref({});
             $ids->{$contact} = $rs->[0]->{id};
           } catch {
@@ -183,7 +198,7 @@ do {
             my $sql = sprintf("select id from whois_contact where street = ? and zip = ? and phone = ? and email = ?");
             my $sth = $dbh->prepare($sql);
             my @v = map { $nfo->{$contact}->{$_} } qw/street zip phone email/;
-            $sth->execute (@v);
+            execReconnect($sth,@v);
             my $rs = $sth->fetchall_arrayref({});
             $ids->{$contact} = $rs->[0]->{id};
           }
@@ -200,20 +215,21 @@ do {
         }
         try {
           my $sth = $dbh->prepare ("INSERT into whois_nfo (domain,created,updated,registrant,admin,tech) values (?,?,?,?,?,?) on conflict do nothing");
-          $sth->execute($domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
+          #          $sth->execute($domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
+          execReconnect($sth,$domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
         } catch { 
         };
 
         try {
           my $sth = $dbh->prepare ("INSERT into whois_servers (url) values (?) on conflict(url) do nothing");
-          $sth->execute ($srv);
+          execReconnect ($sth,$srv);
           $sth->finish;
         } catch {
         };
 
         try {
           my $sth = $dbh->prepare ("update pending_whois set resolved = now() where domain = ?");
-          $sth->execute ($domain);
+          execReconnect ($sth,$domain);
           $sth->finish;
         } catch {
         };
@@ -228,7 +244,7 @@ do {
     send_url();
   }
 
-  $sth->execute();
+  execReconnect($sth);
   $rs = $sth->fetchall_arrayref({});
 
 } while ($#{$rs} > -1);

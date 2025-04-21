@@ -138,7 +138,7 @@ sub on_return {
 #
 # make csv for importing into postgres
 # also must use iconv to convert to UTF8
-my $sth = $dbh->prepare ("select url from pending where resolved is null and random() < 0.01 limit 100");
+my $sth = $dbh->prepare ("select url from pending where resolved is null");
 
 
 my $result;
@@ -167,7 +167,7 @@ sub send_url {
     print ".";
     my $url = $u;
     http_get $url, timeout => 10, 
-    sub { my ($body, $hdr) = @_; on_return($url,$body,$hdr); $count--; $cv->end; send_url() };
+    sub { my ($body, $hdr) = @_; $count--; on_return($url,$body,$hdr); $cv->end; send_url() };
   } else {
     push @urls, $u;
     send_url();
