@@ -4,17 +4,22 @@ use strict;
 use warnings;
 use utf8;
 
-use Email::Sender::Simple qw(sendmail try_to_sendmail);
-use Email::Sender::Transport::SMTPS;
-use Email::Simple ();
-use Email::Simple::Creator ();
-use Email::MIME;
-use Parallel::ForkManager;
+use Net::SMTP;
 use DBI;
 use Data::Dumper;
+use Net::DNS::Async;
 use URI::Encode;
+use AnyEvent;
+use AnyEvent::DNS;
+use AnyEvent::SMTP;
+use Net::SMTP;
 
-my $pm = Parallel::ForkManager->new(30);
+my $cv = AnyEvent->condvar;
+
+
+my $uri     = URI::Encode->new( { encode_reserved => 0 } );
+my $c = new Net::DNS::Async(QueueSize => 20, Retries => 3);
+
 
 my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=127.0.0.1", 'postgres', undef, {
       RaiseError => 1,
@@ -22,29 +27,32 @@ my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=127.0.0.1", 'postgres', unde
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-  my $sth = $dbh->prepare ("select email from email");
-  #my $sth = $dbh->prepare ("select email,name,website,uuid from test_pending_email where sent is null");
-my $batch;
-my %seen;
+my $sth = $dbh->prepare ("select email from mx.pending where random() < 0.01 limit 1");
+#my $sth = $dbh->prepare ("select email,name,website,uuid from test_pending_email where sent is null");
 
-open(OUT, ">domains");
+$sth->execute;
+my $batch = $sth->fetchall_arrayref({});
 
-  $sth->execute;
-  $batch = $sth->fetchall_arrayref({});
+foreach (@$batch) {
+  my ($email) = ($uri->decode($_->{email}));
+  if ($email =~ /\@(.*)$/) {
+    my @parts = reverse split(/\./,$1);
+    my $domain = sprintf("%s.%s", $parts[1],$parts[0]);
+    $cv->begin;
+    AnyEvent::DNS::mx "$domain", sub {
+      my @hosts = @_;
+      print "mx for $domain\n";
+      foreach (@hosts) {
+        print "\t$_\n";
+        my $smtp = Net::SMTP->new($_);
 
-my $uri     = URI::Encode->new( { encode_reserved => 0 } );
-
-  foreach (@$batch) {
-    my ($email, $uuid, $name, $website) = ($_->{email}, $_->{uuid}, $_->{name}, $_->{website});
-    if ($email =~ /\@(.*)/) {
-        my $domain = $uri->decode($1);
-        print OUT "$1\n";
-    }
-
+      }
+      $cv->end;
+    };
   }
+  my $domain;
+}
 
-
-  #iconv -f UTF-8 -t ASCII//TRANSLIT
+$cv->recv;
 
 $dbh->disconnect;
-close OUT;
