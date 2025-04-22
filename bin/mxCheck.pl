@@ -56,7 +56,7 @@ foreach (@$batch) {
     my $svr = $rr->exchange();
     my $smtp = Net::SMTP->new($svr,
 	    Timeout => 30,
-	    Hello => $domain,
+	    Hello => 'mail.obiseo.net',
 	    #Debug   => 1,
     );
 
@@ -69,24 +69,30 @@ foreach (@$batch) {
     $pm->finish unless( defined $smtp );
     $smtp->mail($email);
     if ($smtp->to("adln12jqewfkjbrwgsdjh\@$domain")) {
+	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
+	    $sth->execute($email,sprintf("false positive check failed for mx %s", $svr));
+	    $sth->finish;
     } else {
 	    $smtp->reset;
 	    $smtp->mail($email);
 	    if ($smtp->to($email)) {
 		    my $sth = $dbh->prepare ("insert into mx.verified (email) values (?) on conflict do nothing");
 		    $sth->execute($email);
+		    $sth->finish;
 		    #sahksess
 		    #
 	    } else {
 		    print "Error: ", $smtp->message();
 		    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
 		    $sth->execute($email,join(' ',$smtp->message()));
+		    $sth->finish;
 	    }
     }
     $smtp->quit;
 
     my $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
     $sth->execute($email);
+    $sth->finish;
   }
   } catch {
 	  print "catch err: $_\n";
