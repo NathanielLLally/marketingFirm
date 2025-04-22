@@ -1,47 +1,26 @@
 #!/usr/bin/perl
 use warnings;
 use strict;
-use Modern::Perl;
 use feature 'isa';
-use Try::Tiny;
-use DBI;
-use DBD::CSV;
-use LWP;
-#use LWP::Debug qw(+);
-use Data::Dumper;
 
-use HTTP::Request;
-use HTML::Parser ();
-use HTML::Tagset ();
-use HTML::Element;
-use HTML::TreeBuilder;
-use HTML::TreeBuilder::Select;
-use HTTP::Request::Common ();
-use HTTP::Request;
-use HTTP::Response;
-use HTTP::Cookies;
-use HTTP::Message;
-use HTTP::Headers;
 use Carp qw/croak longmess/;
 use Try::Tiny;
 use DBI;
-use DBD::CSV;
 use Data::Dumper;
-use Coro;
-use AnyEvent;
-use Coro::AnyEvent;
-use AnyEvent::HTTP;
-use PURI;
 use Time::HiRes qw(time gettimeofday tv_interval);
 use Config::Tiny;
 use File::Basename;
 use File::Spec;
 use Time::Piece;
+use AnyEvent;
 use Time::Seconds qw/ ONE_DAY /;
 
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
+if (not -e $cfgFile) {
+	$cfgFile = $ENV{HOME}."/.obiseo.conf";
+}
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
 
@@ -130,8 +109,11 @@ print "interval $interval\n";
       printf "requests per min %0.1d per hour %0.1d [rolling hist %u]\n", 
         $reqPerMin, $reqPerMin * 60, ($#stats +1);
 
-      my $r = Time::Seconds->new($stats[-1]->{remain} / $reqPerT * $tdiff);
-      printf "time remainig: %s\n\n",$r->pretty;
+      if ($reqPerT) {
+	      my $r = Time::Seconds->new($stats[-1]->{remain} / $reqPerT * $tdiff);
+	      printf "time remainig: %s\n",$r->pretty;
+      }
+      print "\n";
     }
   );
 
