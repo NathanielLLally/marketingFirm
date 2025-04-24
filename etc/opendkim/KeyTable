@@ -1,0 +1,1 @@
+opendkim._domainkey.obiseo.net obiseo.net:opendkim:/etc/opendkim/keys/obiseo.net/default.private
