@@ -1,3 +1,15 @@
+package URL;
+use Moose;
+
+has 'scheme' => ( is => 'rw', isa => 'Str', default => '');
+has 'fqdn' => ( is => 'rw', isa => 'Str', default => '');
+sub authority { return shift->{fqdn}; }
+has 'path' => ( is => 'rw', isa => 'Str', default => '');
+has 'query' => ( is => 'rw', isa => 'Str', default => '');
+has 'fragment' => ( is => 'rw', isa => 'Str', default => '');
+has 'url' => ( is => 'rw', isa => 'Str', default => '');
+
+
 package ParsePURI;
 
 use strict;
@@ -16,7 +28,8 @@ use Moose;
 
 has 'verbose' => ( is => 'rw', isa => 'Any' );
 has 'count' => ( is => 'rw', isa => 'Num', default => 0);
-has 'output' => ( is => 'ro', 
+has 'output' => (
+    is => 'ro', 
 	isa => 'ArrayRef[Str]',
    	default => sub {[]},
 	handles => {
@@ -27,10 +40,24 @@ has 'output' => ( is => 'ro',
 	}
 );
 
-# not nec
-has 'URI' => (is => 'rw', isa=> 'URI::Encode', 
-	default => sub { URI::Encode->new( { encode_reserved => 0 } ); }
+has '_parsed' => (
+    traits => ['Hash'],
+    is => 'ro',
+    isa => 'HashRef[HashRef]',
+    default => sub {{}},
+    handles => {
+        set_uri     => 'set',
+        get_uri     => 'get',
+        uri_keys    => 'keys',
+    }
 );
+
+sub first {
+    my $self = shift;
+    my @k = $self->uri_keys;
+    return $self->get_uri($k[0]) if ($#k > -1);
+    return {};
+}
 
 sub parse 
 {
@@ -38,6 +65,7 @@ sub parse
 	print "$text" if (defined $self->verbose);
 	my %url;
 	my %urlParts;
+
 
 	our $finder = URI::Find->new(
 		sub {
@@ -134,6 +162,7 @@ sub parse
                 $urlParts{$k}{domain} = join('.', @parts); 
                 $urlParts{$k}{tld} = $parts[-1];
             }
+            $self->set_uri($k => $urlParts{$k});
         }
 		# ) = ($1,$2,$4,$5);
 		#  print "$scheme, $fqdn, $path, $query\n" if (defined $Pverbose);
