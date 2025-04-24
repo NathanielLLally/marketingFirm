@@ -53,3 +53,13 @@ select domain,created from whois_nfo d join (select max(created) as mc from whoi
 
 --whois queries
 select category,email as tech,d.domain from yp.yellow_pages yp join domain d on d.id = yp.did join whois_nfo wn on wn.domain = d.domain join whois_contact wc on wn.tech = wc.id where check_email(email);
+
+--sending email
+insert into track_email (email,name,website) select email,name,website from (select distinct yp.name,yp.phone,string_agg(yp.category,',') as categories,yp.website,e.email from yp.yellow_pages yp join email e on yp.website = e.website join mx.verified v on e.email = v.email where v.error is null group by name,phone,e.email,yp.website);
+
+--get rid of duplicate emails
+delete from track_email a using track_email b where a.email = b.email and a.ctid < b.ctid and a.uuid not in (select email_uuid from track_email_clicks);
+
+--check unsubs
+select email from track_email_clicks c join track_email t on c.email_uuid = t.uuid where tag = 'unsubscribe';
+select email from track_email_clicks c join track_email t on c.email_uuid = t.uuid where tag = 'unsubscribe' and sent is null or pending is null;
