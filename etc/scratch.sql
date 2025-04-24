@@ -63,3 +63,5 @@ delete from track_email a using track_email b where a.email = b.email and a.ctid
 --check unsubs
 select email from track_email_clicks c join track_email t on c.email_uuid = t.uuid where tag = 'unsubscribe';
 select email from track_email_clicks c join track_email t on c.email_uuid = t.uuid where tag = 'unsubscribe' and sent is null or pending is null;
+
+--#huh
