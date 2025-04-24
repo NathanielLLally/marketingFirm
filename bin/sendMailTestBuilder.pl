@@ -35,10 +35,14 @@ our $CFG = Config::Tiny->read( $cfgFile );
 
 my $logfile = "sendMail.log";
 
-open(LOG, ">>/home/nathaniel/$logfile") || die "cannot open log";
+=head2 dont remember easy way to tee
+
+open(LOG, ">$logfile") || die "cannot open log";
 open(STDOUT, ">&LOG");
 open(STDERR, ">&LOG");
 select STDOUT;
+
+=cut
 
 print `date`;
 
@@ -56,46 +60,10 @@ my $HTML = <HTML>;
 close HTML;
 
 
-my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass},{
-      RaiseError => 1,
-      InactiveDestroy => 1,
-      #    AutoCommit => 1,
-    }) or die "cannot connect: $DBI::errstr";
+	   my $Pemail = shift @ARGV || 'nate.lally@gmail.com';
 
-my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending is not null and sent is null");
-$sth->execute;
-my $res = $sth->fetchall_arrayref();
-my $pending = $res->[0]->[0];
-my $limit = 4 - $pending;
+    my ($email, $uuid, $name, $website) = ($Pemail, '123455', 'Nate', 'http://OBIseo.net');
 
-$sth = $dbh->prepare ("update track_email set pending = now() where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null limit $limit)");
-$sth->execute;
-$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending is not null and sent is null");
-$sth->execute;
-my $batch = $sth->fetchall_arrayref({});
-
-
-#my $threads = ($#{$batch} > 30) ? 30 : $#{$batch};
-my $threads = 0;
-if ($threads < 0) {
-  print "no pending emails\n";
-  exit;
-}
-print "using $threads threads\n";
-my $pm = Parallel::ForkManager->new($threads);
-
-do {
-
-  print "pending emails: ".$#{$batch}."\n";
-  my @random = shuffle @$batch;
-
-  LOOP:
-  foreach (@random) {
-    my ($email, $uuid, $name, $website) = ($_->{email}, $_->{uuid}, $_->{name}, $_->{website});
-
-    my $pid = $pm->start and next LOOP; #do the fork
-
-    if ($#{$batch} >= 0) {
 
     my $html = $HTML;
     $html =~ s/%UUID%/$uuid/g;
@@ -106,40 +74,68 @@ do {
 
     $html =~ s/%WEBSITE%/$website/g;
     $html =~ s/%NAME%/$name/g;
-    print "pid $pid sending $email uuid $uuid\n";
+    $html =~ s/%EMAIL%/$email/g;
+    print "sending $email uuid $uuid\n";
   
     my $subject = "Do you want to advertise for $website?"; 
     #    if (defined $name and length($name) > 0) {
     #      $subject = "$name, do you want more money?"; 
     #    }
-    if (defined $website and length($website) > 0) {
+    my $status = send_my_mail($email, $subject, $html, $uuid);
+
+    if (defined $status) {
+      if ($status isa "Email::Sender::Success") {
+        print "\nstatus: ".Dumper(\$status);
+
+      }
+      if ($status isa 'Email::Sender::Failure') {
+        if ($status isa "Email::Sender::Role::HasMessage") {
+          print $status->{message};
+        } else {
+          print "failed no message\n";
+        }
+      }
+    } else {
+      print "\n\n***No status!\n\n";
+
     }
-    try {
-	    send_my_mail($email, $subject, $html, $uuid);
-        my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ?, content_url = ? where uuid = ?");
-        $isth->execute($subject, $file, $uuid);
-        $isth->finish;
-    } catch {
-	    print "failed $_\n";
-    };
-
-  }
-
-    $pm->finish; #exit in child process
-  }
-
-  $sth->execute;
-  $batch = $sth->fetchall_arrayref({});
-} while ($#{$batch} > -1);
-
-$pm->wait_all_children;
-
-$dbh->disconnect;
 
 exit;
 
 sub send_my_mail {
   my ($to_mail_address, $subject, $body_text, $uuid) = @_;
+
+  my $transport = Email::Sender::Transport::SMTPS->new({
+    host          => $CFG->{smtp}->{server},
+    ssl           => 'starttls',
+    port          => $CFG->{smtp}->{port},
+    sasl_username => $CFG->{smtp}->{user},
+    sasl_password => $CFG->{smtp}->{pass},
+    helo => $CFG->{smtp}->{helo},
+    debug => 0,
+  });
+
+  my $email = Email::MIME->create(
+    header_str => [
+        To      => $to_mail_address,
+        From    => $CFG->{smtp}->{from},
+        Subject => $subject,
+      'Content-Type' => 'text/html',
+      'Message-ID' => "<$uuid\@".$CFG->{smtp}->{helo}.">",
+      'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
+    ],
+    attributes => {
+      #      encoding => '7bit',
+      #      encoding => 'quoted-printable',
+      #      charset  => 'US-ASCII',
+      encoding => 'base64',
+      charset  => 'UTF-8',
+    },
+    body_str => $body_text,
+  );
+  $email->header_str_set('List-Unsubscribe' => "https://obiseo.net/index.html?unsubscribe=$uuid");
+  $email->content_type_set( 'text/html' );
+
 
   my $email = Mail::Builder::Simple->new({
 		  subject => $subject,
