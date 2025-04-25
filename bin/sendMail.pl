@@ -62,15 +62,15 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending is not null and sent is null");
+my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending = '194.180.176.214' and sent is null");
 $sth->execute;
 my $res = $sth->fetchall_arrayref();
 my $pending = $res->[0]->[0];
 my $limit = 4 - $pending;
 
-$sth = $dbh->prepare ("update track_email set pending = now() where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null limit $limit)");
+$sth = $dbh->prepare ("update track_email set pending = '194.180.176.214' where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and email not like '%gmail.com' and random() < 0.001 limit $limit)");
 $sth->execute;
-$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending is not null and sent is null");
+$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending = '194.180.176.214' and sent is null and defer is null");
 $sth->execute;
 my $batch = $sth->fetchall_arrayref({});
 
@@ -120,7 +120,10 @@ do {
         $isth->execute($subject, $file, $uuid);
         $isth->finish;
     } catch {
-	    print "failed $_\n";
+	    print "failed to send to [$email], defering\n";
+        my $isth = $dbh->prepare ("update track_email set defer = now() where uuid = ?");
+        $isth->execute($uuid);
+        $isth->finish;
     };
 
   }
@@ -143,8 +146,7 @@ sub send_my_mail {
 
   my $email = Mail::Builder::Simple->new({
 		  subject => $subject,
-		  from => 'info@obiseo.net',
-		  #$CFG->{smtp}->{from},
+		  from => $CFG->{smtp}->{from},
 		  to => $to_mail_address,
 		  htmltext => $body_text,
 		  image => [
@@ -160,6 +162,7 @@ sub send_my_mail {
     port          => $CFG->{smtp}->{port},
     sasl_username => $CFG->{smtp}->{user},
     sasl_password => $CFG->{smtp}->{pass},
+    debug => 0
 		  }
 	  }
 	  });
