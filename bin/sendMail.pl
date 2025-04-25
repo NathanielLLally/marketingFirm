@@ -21,6 +21,7 @@ use File::Spec;
 use Try::Tiny;
 use lib '/home/nathaniel/src/git/marketingFirm/lib';
 use ParsePURI;
+use Sys::Hostname;
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
@@ -62,16 +63,17 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending is not null and sent is null");
-$sth->execute;
+my $hostname = hostname();
+my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending = ? and sent is null and defer is null");
+$sth->execute($hostname);
 my $res = $sth->fetchall_arrayref();
 my $pending = $res->[0]->[0];
-my $limit = 4 - $pending;
+my $limit = 5 - $pending;
 
-$sth = $dbh->prepare ("update track_email set pending = now() where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null limit $limit)");
-$sth->execute;
-$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending is not null and sent is null");
-$sth->execute;
+$sth = $dbh->prepare ("update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and email not like '%gmail.com' and random() < 0.001 limit $limit)");
+$sth->execute($hostname);
+$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending = ? and sent is null and defer is null");
+$sth->execute($hostname);
 my $batch = $sth->fetchall_arrayref({});
 
 
@@ -115,12 +117,15 @@ do {
     if (defined $website and length($website) > 0) {
     }
     try {
-	    send_my_mail($email, $subject, $html, $uuid);
+	send_my_mail($email, $subject, $html, $uuid);
         my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ?, content_url = ? where uuid = ?");
         $isth->execute($subject, $file, $uuid);
         $isth->finish;
     } catch {
-	    print "failed $_\n";
+	print "failed to send to [$email], defering\n";
+        my $isth = $dbh->prepare ("update track_email set defer = now() where uuid = ?");
+        $isth->execute($uuid);
+        $isth->finish;
     };
 
   }
@@ -141,11 +146,16 @@ exit;
 sub send_my_mail {
   my ($to_mail_address, $subject, $body_text, $uuid) = @_;
 
+  my $to = Email::Valid->address($to_mail_address);
+  if (not defined $to) {
+	  print "invalid email [$to_mail_address]\n";
+	  die "invalid email";
+  }
+
   my $email = Mail::Builder::Simple->new({
 		  subject => $subject,
-		  from => 'info@obiseo.net',
-		  #$CFG->{smtp}->{from},
-		  to => $to_mail_address,
+		  from => $CFG->{smtp}->{from},
+		  to => $to,
 		  htmltext => $body_text,
 		  image => [
 	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_header_logo_transparent.png", 'logo'],
@@ -160,6 +170,7 @@ sub send_my_mail {
     port          => $CFG->{smtp}->{port},
     sasl_username => $CFG->{smtp}->{user},
     sasl_password => $CFG->{smtp}->{pass},
+    debug => 0
 		  }
 	  }
 	  });
