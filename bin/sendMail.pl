@@ -51,6 +51,7 @@ print `date`;
 # create a signer object
 
 my $file = shift @ARGV;
+my $sendPerMinute = shift @ARGV || 4;
 open(HTML, "<$file") || die "cannot open html [$file]!\n";
 local $/;
 my $HTML = <HTML>;
@@ -68,7 +69,7 @@ my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where 
 $sth->execute($hostname);
 my $res = $sth->fetchall_arrayref();
 my $pending = $res->[0]->[0];
-my $limit = 10 - $pending;
+my $limit = $sendPerMinute - $pending;
 
 $sth = $dbh->prepare ("update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and email not like '%gmail.com' and random() < 0.001 limit $limit)");
 $sth->execute($hostname);
