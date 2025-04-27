@@ -22,7 +22,7 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
 my $bytes = 0;
 
 my $DEBUG = 1;
-my $DRY = 1;
+my $DRY = 0;
 my %dup;
 my %rcptForIds;
 ## Please see file perltidy.ERR
@@ -43,20 +43,20 @@ foreach my $k (keys %dup) {
     my $anyError = undef;
     foreach my $el (@{$rcptForIds{$k}}) {
 
-      printf "%s\t%s\t%s\n", $el->{queue_id}, $el->{date}, $el->{error_string} || "no error" if ($DEBUG);
-      $anyError = $anyError."\n".$el->{error_string} if (defined $el->{error_string});
+      #      printf "%s\t%s\t%s\n", $el->{queue_id}, $el->{date}, $el->{error_string} || "no error" if ($DEBUG);
+      $anyError = $anyError."\t|\t".$el->{error_string} if (defined $el->{error_string});
     }
 
 
 
     if (not $DRY) {
     if (defined $anyError) {
-      print "there were errors, flusing all, marking as defered in track_email\n";
+      print "errors sending to $k\t$anyError\n";
         my $isth = $dbh->prepare ("update track_email set defer = now() where email = ?");
         $isth->execute($k);
         $isth->finish;
     foreach my $el ( @{ $rcptForIds{$k} } ) {
-        `postsuper -d $el->{queue_id}`;
+        `sudo postsuper -d $el->{queue_id}`;
       }
     } else {
       print "no errors, flusing all but first, marking as sent in track_email\n";
@@ -66,7 +66,7 @@ foreach my $k (keys %dup) {
 ## Please see file perltidy.ERR
       shift @{ $rcptForIds{$k }};
     foreach my $el ( @{ $rcptForIds{$k} } ) {
-        `postsuper -d $el->{queue_id}`;
+        `sudo postsuper -d $el->{queue_id}`;
       }
 
     }
