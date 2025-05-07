@@ -32,7 +32,7 @@ our $CFG = Config::Tiny->read( $cfgFile );
   #  my $smtpuser     = 'sales@grandstreet.group';
   #  my $smtppassword = 'xmno vbhe bwkx ptgz';
 
-my $logfile = "sendMail.log";
+my $logfile = "postfixFilter.log";
 
 open(LOG, ">>".$ENV{HOME}."/$logfile") || die "cannot open log";
 open(STDOUT, ">&LOG");
