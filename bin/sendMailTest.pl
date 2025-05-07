@@ -5,7 +5,6 @@ use warnings;
 use utf8;
 use feature 'isa';
 
-use Mail::Builder::Simple;
 use Email::Sender::Simple qw(sendmail try_to_sendmail);
 use Email::Sender::Transport::SMTPS;
 use Email::Simple ();
@@ -83,6 +82,23 @@ close HTML;
     #    }
     my $status = send_my_mail($email, $subject, $html, $uuid);
 
+    if (defined $status) {
+      if ($status isa "Email::Sender::Success") {
+        print "\nstatus: ".Dumper(\$status);
+
+      }
+      if ($status isa 'Email::Sender::Failure') {
+        if ($status isa "Email::Sender::Role::HasMessage") {
+          print $status->{message};
+        } else {
+          print "failed no message\n";
+        }
+      }
+    } else {
+      print "\n\n***No status!\n\n";
+
+    }
+
 exit;
 
 sub send_my_mail {
@@ -118,38 +134,29 @@ sub send_my_mail {
   );
   $email->header_str_set('List-Unsubscribe' => "https://obiseo.net/index.html?unsubscribe=$uuid");
   $email->content_type_set( 'text/html' );
+  #  $email->encoding_set( 'base64' ) for $email->parts;
+  #  $email->encoding_set( 'base64' ) for $email->body_str;
+  #open my $fh, '<', \$email or die "open(): $!";
 
+=head2 attempt DKIM signing.. using google workspace now 
 
-  my $email = Mail::Builder::Simple->new({
-		  subject => $subject,
-		  from => 'info@obiseo.net',
-		  #$CFG->{smtp}->{from},
-		  to => $to_mail_address,
-		  htmltext => $body_text,
-		  image => [
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_header_logo_transparent.png", 'logo'],
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_letterhead_tag_transparent.png", 'tag'],
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/lineshadow.png", 'lineshadow'],
-		  ],
-		  mail_client => {
-			  mailer => 'SMTPS',
-			  mailer_args => {
-    host          => $CFG->{smtp}->{server},
-    ssl           => 'starttls',
-    port          => $CFG->{smtp}->{port},
-    sasl_username => $CFG->{smtp}->{user},
-    sasl_password => $CFG->{smtp}->{pass},
-		  }
-	  }
-	  });
-  my $status;
-  try {
-  $status = $email->send(
-	'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
-  	'List-Unsubscribe' => "https://obiseo.net/index.html?unsubscribe=$uuid"
-  );
-  } catch {
-  };
-  $status;
+  my $raw = $email->as_string;
+  $raw =~ s/\n/\015\012/gs;
+  $dkim->PRINT($raw);
+$dkim->CLOSE;
+my $sig = $dkim->signature;
+
+#$email->header_str_set( 'DKIM-Signature' => $dkim->signature->as_string );
+my ($header_name, $header_content) = split /:\s*/, $sig->as_string, 2;
+$email->header_str_set( $header_name => $header_content );
+unshift @{$email->{Header}}, [ 'List-Unsubscribe', "https://obiseo.net/index.html?unsubscribe=$uuid"];
+unshift @{$email->{Header}}, [ $header_name, $header_content ];
+print $sig->as_string."\n";
+
+=cut
+  #print $email->as_string;
+
+my $status = try_to_sendmail($email, { transport => $transport });
+  return $status;
 }
 
