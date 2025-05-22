@@ -148,7 +148,8 @@ sub parse
 				$urlParts{$k}{'params'} = \%p;
 
 				my @q;
-				foreach my ($k, $v) ( %{$urlParts{$k}{'params'}} ) {
+				foreach my $k (keys %{$urlParts{$k}{'params'}} ) {
+					my $v = $urlParts{$k}{'params'}->{$k};
 					push @q, "$k\=$v";
 				}
 				$urlParts{$k}{'query'} = join("&", @q);
