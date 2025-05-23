@@ -1,0 +1,2 @@
+create or replace view verified_yphdrurl_singleton 
+as select * from (select distinct coalesce(e.hdrurl_fqdn,e.website_fqdn) as website, min(e.email) as email,string_agg(distinct yp.name,'|') as name from yp.yellow_pages yp join email e on yp.website = e.website join mx.verified v on e.email = v.email where v.error is null and e.email not like '%gmail.com' group by coalesce(e.hdrurl_fqdn,e.website_fqdn)) first where first.name not like '%|%' and first.website is not null;
