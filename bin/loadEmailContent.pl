@@ -89,7 +89,7 @@ if (scalar keys %outgoing > 0) {
 }
 
 my $dirname = dirname(__FILE__);
-my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
+my $cfgFile = File::Spec->catfile($ENV{HOME},'.obiseo.conf');
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
 
@@ -106,7 +106,10 @@ undef $/; # enable slurp mode
 my $html = <FH>;
 close FH;
 
-my $description = makeDescription($html);
+my $description = 'plaintext';
+if ($html =~ /\<html\>/i) {
+  $description = makeDescription($html);
+}
 
 
 my ($basename, $path, $suffix) = fileparse($file);
