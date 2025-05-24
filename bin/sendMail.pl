@@ -80,7 +80,9 @@ my $limit = $sendPerMinute - $pending;
 
 #  mark new emails as pending for this host
 #
-$sth = $dbh->prepare ("update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and cid = ? and email not like '%gmail.com' order by random() limit $limit)");
+my $sql = "update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and defer is null and cid = ? and email not like '%gmail.com' order by random() limit $limit)";
+
+$sth = $dbh->prepare($sql);
 $sth->execute($hostname, $cid);
 
 # select all emails pending for this host
@@ -117,11 +119,11 @@ do {
 
     my $p = ParsePURI->new();
     $p->parse($website);
-    $website = $p->first->{fqdn};
+    $website = $p->first->{fqdn} || $website;
 
     $html =~ s/%WEBSITE%/$website/g;
     $html =~ s/%NAME%/$name/g;
-    print "pid $pid sending $email uuid $uuid\n";
+    print "pid $pid sending $email cid $cid uuid $uuid\n";
   
     #    if (defined $name and length($name) > 0) {
     #      $subject = "$name, do you want more money?"; 
@@ -166,6 +168,9 @@ sub send_my_mail {
   }
 
   my $ke = sprintf("cid%s",$cid);
+  if (not exists $CFG->{$ke}) {
+    die "no config for cid $cid!";
+  }
   my $unsub = $CFG->{$ke}->{unsubscribe};
   $unsub =~ s/%UUID%/$uuid/;
 
@@ -176,16 +181,13 @@ sub send_my_mail {
     $subject =~ s/%WEBSITE%/$website/g;
     $subject =~ s/%NAME%/$name/g;
 
-  my $email = Mail::Builder::Simple->new({
+    my $email;
+    if ($body_text =~ /\<html\>/i) {
+  $email = Mail::Builder::Simple->new({
 		  subject => $subject,
 		  from => $CFG->{$ke}->{from},
 		  to => $to,
 		  htmltext => $body_text,
-                  #                  #		  image => [
-                  #	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_header_logo_transparent.png", 'logo'],
-                  #	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_letterhead_tag_transparent.png", 'tag'],
-                  #	  ["/home/nathaniel/src/git/marketingFirm/www/img/lineshadow.png", 'lineshadow'],
-                  #		  ],
 		  mail_client => {
 			  mailer => 'SMTPS',
 			  mailer_args => {
@@ -198,6 +200,27 @@ sub send_my_mail {
 		  }
 	  }
 	  });
+      } else {
+  $email = Mail::Builder::Simple->new({
+		  subject => $subject,
+		  from => $CFG->{$ke}->{from},
+		  to => $to,
+		  plaintext => $body_text,
+		  mail_client => {
+			  mailer => 'SMTPS',
+			  mailer_args => {
+    host          => $CFG->{smtp}->{server},
+    ssl           => 'starttls',
+    port          => $CFG->{smtp}->{port},
+    sasl_username => $CFG->{smtp}->{user},
+    sasl_password => $CFG->{smtp}->{pass},
+    debug => 0
+		  }
+	  }
+	  });
+      }
+
+
   $email->send(
 	'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
   	'List-Unsubscribe' => $unsub,
