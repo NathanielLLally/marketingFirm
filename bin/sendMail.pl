@@ -50,12 +50,8 @@ print `date`;
 
 # create a signer object
 
-my $file = shift @ARGV;
+my $cid = shift @ARGV;
 my $sendPerMinute = shift @ARGV || 4;
-open(HTML, "<$file") || die "cannot open html [$file]!\n";
-local $/;
-my $HTML = <HTML>;
-close HTML;
 
 
 my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass},{
@@ -64,17 +60,35 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
+my $sth = $dbh->prepare("select basename,content from email_content where id = ?");
+$sth->execute($cid);
+my $res = $sth->fetchall_arrayref({});
+if ($#{$res} < 0) {
+  die "no cid [$cid]!!";
+}
+my $HTML = $res->[0]->{content};
+
 my $hostname = hostname();
-my $sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending = ? and sent is null and defer is null");
-$sth->execute($hostname);
-my $res = $sth->fetchall_arrayref();
+
+# existing pending emails for this host
+#
+$sth = $dbh->prepare ("select count(track_email.uuid) from track_email where pending = ? and sent is null and defer is null and cid = ?");
+$sth->execute($hostname, $cid);
+$res = $sth->fetchall_arrayref();
 my $pending = $res->[0]->[0];
 my $limit = $sendPerMinute - $pending;
 
-$sth = $dbh->prepare ("update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and email not like '%gmail.com' and random() < 0.001 limit $limit)");
-$sth->execute($hostname);
-$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending = ? and sent is null and defer is null");
-$sth->execute($hostname);
+#  mark new emails as pending for this host
+#
+my $sql = "update track_email set pending = ? where track_email.uuid in (select track_email.uuid from track_email where sent is null and pending is null and defer is null and cid = ? and email not like '%gmail.com' order by random() limit $limit)";
+
+$sth = $dbh->prepare($sql);
+$sth->execute($hostname, $cid);
+
+# select all emails pending for this host
+#
+$sth = $dbh->prepare ("select email,uuid,name,website from track_email where pending = ? and sent is null and defer is null and cid = ?");
+$sth->execute($hostname, $cid);
 my $batch = $sth->fetchall_arrayref({});
 
 
@@ -105,22 +119,21 @@ do {
 
     my $p = ParsePURI->new();
     $p->parse($website);
-    $website = $p->first->{fqdn};
+    $website = $p->first->{fqdn} || $website;
 
     $html =~ s/%WEBSITE%/$website/g;
     $html =~ s/%NAME%/$name/g;
-    print "pid $pid sending $email uuid $uuid\n";
+    print "pid $pid sending $email cid $cid uuid $uuid\n";
   
-    my $subject = "Do you want to advertise for $website?"; 
     #    if (defined $name and length($name) > 0) {
     #      $subject = "$name, do you want more money?"; 
     #    }
     if (defined $website and length($website) > 0) {
     }
     try {
-	send_my_mail($email, $subject, $html, $uuid);
-        my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ?, content_url = ? where uuid = ?");
-        $isth->execute($subject, $file, $uuid);
+	my $s = send_my_mail($_, $html);
+        my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ? where uuid = ?");
+        $isth->execute($s, $uuid);
         $isth->finish;
     } catch {
 	print "failed to send to [$email], defering\n";
@@ -145,7 +158,8 @@ $dbh->disconnect;
 exit;
 
 sub send_my_mail {
-  my ($to_mail_address, $subject, $body_text, $uuid) = @_;
+  my ($ctx, $body_text) = @_;
+  my ($to_mail_address, $name, $website, $uuid) = ($ctx->{email}, $ctx->{uuid}, $ctx->{name}, $ctx->{website});
 
   my $to = Email::Valid->address($to_mail_address);
   if (not defined $to) {
@@ -153,16 +167,27 @@ sub send_my_mail {
 	  die "invalid email";
   }
 
-  my $email = Mail::Builder::Simple->new({
+  my $ke = sprintf("cid%s",$cid);
+  if (not exists $CFG->{$ke}) {
+    die "no config for cid $cid!";
+  }
+  my $unsub = $CFG->{$ke}->{unsubscribe};
+  $unsub =~ s/%UUID%/$uuid/;
+
+    my $subject;
+    #= "Do you want to advertise for $website?"; 
+    $subject = $CFG->{$ke}->{subject} || 'Hello there, how are you today?';
+    $subject =~ s/%UUID%/$uuid/g;
+    $subject =~ s/%WEBSITE%/$website/g;
+    $subject =~ s/%NAME%/$name/g;
+
+    my $email;
+    if ($body_text =~ /\<html\>/i) {
+  $email = Mail::Builder::Simple->new({
 		  subject => $subject,
-		  from => $CFG->{smtp}->{from},
+		  from => $CFG->{$ke}->{from},
 		  to => $to,
 		  htmltext => $body_text,
-		  image => [
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_header_logo_transparent.png", 'logo'],
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/obiseo_letterhead_tag_transparent.png", 'tag'],
-	  ["/home/nathaniel/src/git/marketingFirm/www/img/lineshadow.png", 'lineshadow'],
-		  ],
 		  mail_client => {
 			  mailer => 'SMTPS',
 			  mailer_args => {
@@ -175,9 +200,31 @@ sub send_my_mail {
 		  }
 	  }
 	  });
+      } else {
+  $email = Mail::Builder::Simple->new({
+		  subject => $subject,
+		  from => $CFG->{$ke}->{from},
+		  to => $to,
+		  plaintext => $body_text,
+		  mail_client => {
+			  mailer => 'SMTPS',
+			  mailer_args => {
+    host          => $CFG->{smtp}->{server},
+    ssl           => 'starttls',
+    port          => $CFG->{smtp}->{port},
+    sasl_username => $CFG->{smtp}->{user},
+    sasl_password => $CFG->{smtp}->{pass},
+    debug => 0
+		  }
+	  }
+	  });
+      }
+
+
   $email->send(
 	'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
-  	'List-Unsubscribe' => "https://obiseo.net/index.html?unsubscribe=$uuid"
+  	'List-Unsubscribe' => $unsub,
   );
+  return $subject;
 }
 
