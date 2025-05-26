@@ -14,6 +14,19 @@ unless (eval "require $m") {
 return "giggity";
 
 $_X$;
+
+CREATE or REPLACE FUNCTION public.emailIsValid(email text) RETURNS bool
+    LANGUAGE plperlu
+    AS $_X$
+use Email::Valid;
+my $to = Email::Valid->address($_[0]);
+if (not defined $to) {
+  return 0;
+}
+return 1;
+
+$_X$;
+
 CREATE or REPLACE FUNCTION public.domain(url text) RETURNS varchar
     LANGUAGE plperlu
     AS $_X$
