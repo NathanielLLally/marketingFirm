@@ -1,0 +1,40 @@
+#!/bin/sh
+
+function rotate() {
+	F=$1
+	N=$2
+	PN=$((N - 1))
+	E=""
+
+	if (( PN >= 0 )); then
+		E=".$PN"
+	fi
+	if (( N >= 0 && N <= 9)); then
+		if [ -e "$F$E" ]; then
+			BSRC=`stat -c %s $F$E`
+			if [ -e "$F.$N" ];then
+				BDST=`stat -c %s $F.$N`
+				echo src file bytes $BSRC dst file bytes $BDST total would be $((BSRC+BDST))
+				if (( (BSRC + BDST) < 5000000 )); then
+					echo "cat $F$E $F.$N"
+					cat "$F$E" >> "$F.$N"
+				else
+					echo "moving $F$E $F.$N"
+					mv "$F$E" "$F.$N"
+				fi
+			elif (( BSRC > 5000000 || N == 0 )); then 
+					echo "moving $F$E $F.$N src bytes $BSRC"
+				mv "$F$E" "$F.$N"
+			fi
+		fi
+		rotate $F $PN
+	fi
+}
+
+#cd $HOME
+
+for i in `ls *.log`; do
+	rotate $i 9
+done
+
+#sudo kill -USR1 `cat /var/run/nginx.pid`
