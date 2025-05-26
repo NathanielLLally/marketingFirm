@@ -86,7 +86,7 @@ sub send_url {
     print "whois $url\n";
     whois $url, timeout => 10, 
     sub {
-      print "returned $url\n";
+      print "returned $url\t";
       $count--;
       my $data = shift;
       if ($data and $data =~ /\s*?[Dd]omain/) {
@@ -99,7 +99,7 @@ sub send_url {
       }
       else {
         my $reason = shift;
-        print "whois error: $reason\n$data\n";
+        print "whois error: $reason\t$data";
       }
 
       $cv->end; 
@@ -136,6 +136,7 @@ my $dbField = {
   Organisation => 'organization',
   Street => 'street',
   City => 'city',
+  'State' => 'state',
   'State/Province' => 'state',
   'State\Province' => 'state',
   Country => 'country',
@@ -171,6 +172,22 @@ do {
         my $nfo = {};
         my $ids = {};
         $data =~ s/\r//g;
+
+        my ($created, $updated, $expires);
+        if ($data =~ /Creation Date: (.*?)$/m) {
+          $created = $1;
+          print "created $created\n" if ($DEBUG);
+        }
+        if ($data =~ /Updated Date: (.*?)$/m) {
+          $updated = $1;
+          print "updated $updated\n" if ($DEBUG)
+        }
+        if ($data =~ /Expir(y|ation) Date: (.*?)$/m) {
+          $expires = $2;
+          print "expires $expires\n" if ($DEBUG)
+        }
+        if ( defined $created ) {
+          print "created $created\n";
 
         my $err;
         while ($data =~ /^\s*?Registrant (.*?):\s*?(.*?)$/mgc) {
@@ -233,11 +250,11 @@ do {
                 my $rs = $sth->fetchall_arrayref( {} );
                 $ids->{$contact} = $rs->[0]->{id};
             } else {
-              print "no contact info $contact\n";
+              #              print "no contact info $contact\t";
             }
           } catch {
             if ($_ =~ /violates check constraint/) {
-              print "\nbad email: ".$nfo->{$contact}->{email}."\n";
+              #print "bad email: ".$nfo->{$contact}->{email}."\n";
             } else {
               print $data;
               print "$_\n";
@@ -254,20 +271,6 @@ do {
           }
         }
 
-        my ($created, $updated, $expires);
-        if ($data =~ /Creation Date: (.*?)$/m) {
-          $created = $1;
-          print "created $created\n" if ($DEBUG);
-        }
-        if ($data =~ /Updated Date: (.*?)$/m) {
-          $updated = $1;
-          print "updated $updated\n" if ($DEBUG)
-        }
-        if ($data =~ /Expir(y|ation) Date: (.*?)$/m) {
-          $expires = $2;
-          print "expires $expires\n" if ($DEBUG)
-        }
-        if ( defined $created ) {
             try {
                 my $sth = $dbh->prepare(
 "INSERT into wi.nfo (domain,created,updated,expires,registrant,admin,tech,billing) values (?,?,?,?,?,?,?,?) on conflict (domain) do update set updated=EXCLUDED.updated,expires=EXCLUDED.expires,registrant=EXCLUDED.registrant,admin=EXCLUDED.admin,tech=EXCLUDED.tech"
