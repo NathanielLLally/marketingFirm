@@ -68,7 +68,7 @@ sub execReconnect
         { RaiseError => 1, }
       ) or die "cannot connect: $DBI::errstr";
     } else {
-      #  print "uncaught error: $_\n";
+        die "uncaught dB error: $_\n";
     }
   };
 }
@@ -86,7 +86,7 @@ sub send_url {
     print "whois $url\n";
     whois $url, timeout => 10, 
     sub {
-      print "returned $url\n";
+      print "returned $url\t";
       $count--;
       my $data = shift;
       if ($data and $data =~ /\s*?[Dd]omain/) {
@@ -99,7 +99,7 @@ sub send_url {
       }
       else {
         my $reason = shift;
-        print "whois error: $reason\n$data\n";
+        print "whois error: $reason\t$data";
       }
 
       $cv->end; 
@@ -133,8 +133,10 @@ print "\nfetching whois\n";
 my $dbField = {
   Name => 'name',
   Organization => 'organization',
+  Organisation => 'organization',
   Street => 'street',
   City => 'city',
+  'State' => 'state',
   'State/Province' => 'state',
   'State\Province' => 'state',
   Country => 'country',
@@ -144,12 +146,15 @@ my $dbField = {
   'Postal Code' => 'zip',
   'PostalCode' => 'zip',
   'Fax' => 'fax',
+  'FAX' => 'fax',
   'Fax Ext' => 'fax_ext',
+  'FAX Ext' => 'fax_ext',
   'FaxExt' => 'fax_ext',
   Email => 'email'
 };
-my @f = map { $_ } sort values %$dbField;
-my @q = map { '?' } values %$dbField;
+my %vals = map { $_ => 1 }values %$dbField;
+my @f = map { $_ } sort keys %vals; 
+my @q = map { '?' } keys %vals;
 
 
 my $sth = $dbh->prepare ("select domain from wi.pending where resolved is null and random() < 0.001 limit 10");
@@ -168,8 +173,24 @@ do {
         my $ids = {};
         $data =~ s/\r//g;
 
+        my ($created, $updated, $expires);
+        if ($data =~ /Creation Date: (.*?)$/m) {
+          $created = $1;
+          print "created $created\n" if ($DEBUG);
+        }
+        if ($data =~ /Updated Date: (.*?)$/m) {
+          $updated = $1;
+          print "updated $updated\n" if ($DEBUG)
+        }
+        if ($data =~ /Expir(y|ation) Date: (.*?)$/m) {
+          $expires = $2;
+          print "expires $expires\n" if ($DEBUG)
+        }
+        if ( defined $created ) {
+          print "created $created\n";
+
         my $err;
-        while ($data =~ /^\s*?Registrant (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Registrant (.*?):\s*?(.*?)$/mgc) {
           print "registrant $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -178,7 +199,7 @@ do {
           }
           $nfo->{'registrant'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Admin (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Admin (.*?):\s*?(.*?)$/mgc) {
           print "admin $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -187,7 +208,7 @@ do {
           }
           $nfo->{'admin'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Tech (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Tech (.*?):\s*?(.*?)$/mgc) {
           print "tech $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -196,7 +217,7 @@ do {
           }
           $nfo->{'tech'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Billing (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Billing (.*?):\s*?(.*?)$/mgc) {
           print "billing $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -228,8 +249,16 @@ do {
                 execReconnect( $sth, @v );
                 my $rs = $sth->fetchall_arrayref( {} );
                 $ids->{$contact} = $rs->[0]->{id};
+            } else {
+              #              print "no contact info $contact\t";
             }
           } catch {
+            if ($_ =~ /violates check constraint/) {
+              #print "bad email: ".$nfo->{$contact}->{email}."\n";
+            } else {
+              print $data;
+              print "$_\n";
+            }
           };
 
           if (not defined $ids->{$contact} and exists $nfo->{$contact}) {
@@ -242,20 +271,6 @@ do {
           }
         }
 
-        my ($created, $updated, $expires);
-        if ($data =~ /Creation Date: (.*?)$/m) {
-          $created = $1;
-          print "created $created\n" if ($DEBUG);
-        }
-        if ($data =~ /Updated Date: (.*?)$/m) {
-          $updated = $1;
-          print "updated $updated\n" if ($DEBUG)
-        }
-        if ($data =~ /Expir(y|ation) Date: (.*?)$/m) {
-          $expires = $2;
-          print "expires $expires\n" if ($DEBUG)
-        }
-        if ( defined $created ) {
             try {
                 my $sth = $dbh->prepare(
 "INSERT into wi.nfo (domain,created,updated,expires,registrant,admin,tech,billing) values (?,?,?,?,?,?,?,?) on conflict (domain) do update set updated=EXCLUDED.updated,expires=EXCLUDED.expires,registrant=EXCLUDED.registrant,admin=EXCLUDED.admin,tech=EXCLUDED.tech"
@@ -272,7 +287,6 @@ do {
             #You have been banned for abuse.
             #You have exceeded your access quota. Please try again later
             #IP Address Has Reached Rate Limit
-            return;
             try {
                 my $sth = $dbh->prepare(
                     "update wi.pending set resolved = now() where domain = ?"
