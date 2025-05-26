@@ -68,7 +68,7 @@ sub execReconnect
         { RaiseError => 1, }
       ) or die "cannot connect: $DBI::errstr";
     } else {
-      #  print "uncaught error: $_\n";
+        die "uncaught dB error: $_\n";
     }
   };
 }
@@ -133,6 +133,7 @@ print "\nfetching whois\n";
 my $dbField = {
   Name => 'name',
   Organization => 'organization',
+  Organisation => 'organization',
   Street => 'street',
   City => 'city',
   'State/Province' => 'state',
@@ -144,12 +145,15 @@ my $dbField = {
   'Postal Code' => 'zip',
   'PostalCode' => 'zip',
   'Fax' => 'fax',
+  'FAX' => 'fax',
   'Fax Ext' => 'fax_ext',
+  'FAX Ext' => 'fax_ext',
   'FaxExt' => 'fax_ext',
   Email => 'email'
 };
-my @f = map { $_ } sort values %$dbField;
-my @q = map { '?' } values %$dbField;
+my %vals = map { $_ => 1 }values %$dbField;
+my @f = map { $_ } sort keys %vals; 
+my @q = map { '?' } keys %vals;
 
 
 my $sth = $dbh->prepare ("select domain from wi.pending where resolved is null and random() < 0.001 limit 10");
@@ -169,7 +173,7 @@ do {
         $data =~ s/\r//g;
 
         my $err;
-        while ($data =~ /^\s*?Registrant (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Registrant (.*?):\s*?(.*?)$/mgc) {
           print "registrant $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -178,7 +182,7 @@ do {
           }
           $nfo->{'registrant'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Admin (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Admin (.*?):\s*?(.*?)$/mgc) {
           print "admin $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -187,7 +191,7 @@ do {
           }
           $nfo->{'admin'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Tech (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Tech (.*?):\s*?(.*?)$/mgc) {
           print "tech $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -196,7 +200,7 @@ do {
           }
           $nfo->{'tech'}->{$field} = $2;
         }
-        while ($data =~ /^\s*?Billing (.*?):\s+(.*?)$/mgc) {
+        while ($data =~ /^\s*?Billing (.*?):\s*?(.*?)$/mgc) {
           print "billing $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
           if (not defined $field and $1 ne 'ID') {
@@ -228,8 +232,16 @@ do {
                 execReconnect( $sth, @v );
                 my $rs = $sth->fetchall_arrayref( {} );
                 $ids->{$contact} = $rs->[0]->{id};
+            } else {
+              print "no contact info $contact\n";
             }
           } catch {
+            if ($_ =~ /violates check constraint/) {
+              print "\nbad email: ".$nfo->{$contact}->{email}."\n";
+            } else {
+              print $data;
+              print "$_\n";
+            }
           };
 
           if (not defined $ids->{$contact} and exists $nfo->{$contact}) {
@@ -272,7 +284,6 @@ do {
             #You have been banned for abuse.
             #You have exceeded your access quota. Please try again later
             #IP Address Has Reached Rate Limit
-            return;
             try {
                 my $sth = $dbh->prepare(
                     "update wi.pending set resolved = now() where domain = ?"
