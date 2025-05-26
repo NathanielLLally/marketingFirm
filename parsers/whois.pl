@@ -12,16 +12,16 @@ use Coro;
 use AnyEvent;
 use Coro::AnyEvent;
 use AnyEvent::Whois::Raw;
-use PURI;
 use Time::HiRes qw(time gettimeofday tv_interval);
 use Config::Tiny;
 use File::Basename;
 use File::Spec;
 
+$Net::Whois::Raw::CHECK_FAIL = 1;
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
-if ($dirname =~ /^script/) {
+if (! -e $cfgFile) {
     $cfgFile = $ENV{HOME}."/.obiseo.conf";
 }
 print "using config $cfgFile\n";
@@ -52,6 +52,8 @@ $SIG{HUP} = sub {
 my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass},{
       RaiseError => 1,
       #    AutoCommit => 1,
+      PrintError => 0,
+      PrintWarn => 0,
     }) or die "cannot connect: $DBI::errstr";
 
 sub execReconnect
@@ -66,7 +68,7 @@ sub execReconnect
         { RaiseError => 1, }
       ) or die "cannot connect: $DBI::errstr";
     } else {
-      print "uncaught error: $_\n";
+      #  print "uncaught error: $_\n";
     }
   };
 }
@@ -87,17 +89,17 @@ sub send_url {
       print "returned $url\n";
       $count--;
       my $data = shift;
-      if ($data) {
+      if ($data and $data =~ /\s*?[Dd]omain/) {
         my $srv = shift;
         $cb->($data,$srv,$url);
       }
       elsif (! defined $data) {
         my $srv = shift;
-        print "no information for domain on $srv found";
+        print "no information for domain on $srv found\n";
       }
       else {
         my $reason = shift;
-        print "whois error: $reason";
+        print "whois error: $reason\n$data\n";
       }
 
       $cv->end; 
@@ -134,19 +136,23 @@ my $dbField = {
   Street => 'street',
   City => 'city',
   'State/Province' => 'state',
+  'State\Province' => 'state',
   Country => 'country',
   Phone => 'phone',
   'Phone Ext' => 'phone_ext',
+  'PhoneExt' => 'phone_ext',
   'Postal Code' => 'zip',
+  'PostalCode' => 'zip',
   'Fax' => 'fax',
   'Fax Ext' => 'fax_ext',
+  'FaxExt' => 'fax_ext',
   Email => 'email'
 };
 my @f = map { $_ } sort values %$dbField;
 my @q = map { '?' } values %$dbField;
 
 
-my $sth = $dbh->prepare ("select domain from pending_whois where resolved is null and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select domain from wi.pending where resolved is null and random() < 0.001 limit 10");
 execReconnect($sth);
 my $rs = $sth->fetchall_arrayref({});
 
@@ -162,40 +168,72 @@ do {
         my $ids = {};
         $data =~ s/\r//g;
 
-        while ($data =~ /^Registrant (.*?): (.*?)$/mgc) {
+        my $err;
+        while ($data =~ /^\s*?Registrant (.*?):\s+(.*?)$/mgc) {
           print "registrant $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
+          if (not defined $field and $1 ne 'ID') {
+            print "\n***Missing field xlate for registrant [$1:$2]\n";
+            $err = 1;
+          }
           $nfo->{'registrant'}->{$field} = $2;
         }
-        while ($data =~ /^Admin (.*?): (.*?)$/mgc) {
+        while ($data =~ /^\s*?Admin (.*?):\s+(.*?)$/mgc) {
           print "admin $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
+          if (not defined $field and $1 ne 'ID') {
+            print "\n***Missing field xlate for admin [$1:$2]\n";
+            $err = 1;
+          }
           $nfo->{'admin'}->{$field} = $2;
         }
-        while ($data =~ /^Tech (.*?): (.*?)$/mgc) {
+        while ($data =~ /^\s*?Tech (.*?):\s+(.*?)$/mgc) {
           print "tech $1 => $2\n" if ($DEBUG);
           my $field = $dbField->{$1};
+          if (not defined $field and $1 ne 'ID') {
+            print "\n***Missing field xlate for tech [$1:$2]\n";
+            $err = 1;
+          }
           $nfo->{'tech'}->{$field} = $2;
         }
+        while ($data =~ /^\s*?Billing (.*?):\s+(.*?)$/mgc) {
+          print "billing $1 => $2\n" if ($DEBUG);
+          my $field = $dbField->{$1};
+          if (not defined $field and $1 ne 'ID') {
+            print "\n***Missing field xlate for tech [$1:$2]\n";
+            $err = 1;
+          }
+          $nfo->{'billing'}->{$field} = $2;
+        }
 
-        foreach my $contact (qw/registrant admin tech/) {
+        if (defined $err) {
+          print $data;
+        }
+
+        foreach my $contact (qw/registrant admin tech billing/) {
           try {
-            my @v = map { $nfo->{$contact}->{$_} } @f; 
-            my $sql = sprintf("INSERT into whois_contact (%s) values (%s) %s%s",
-              join(',',@f), join(',',@q),
-              "on conflict(street, zip, phone, email)",
-              "do nothing returning id"
-            );
-            print "$sql\n" if ($DEBUG);
-            print join('',map { my $o = $_ || ""; "[$o]"; } @v)."\n" if ($DEBUG);
-            my $sth = $dbh->prepare ($sql);
-            execReconnect($sth,@v);
-            my $rs = $sth->fetchall_arrayref({});
-            $ids->{$contact} = $rs->[0]->{id};
+            if ( exists $nfo->{$contact} ) {
+                my @v   = map { $nfo->{$contact}->{$_} } @f;
+                my $sql = sprintf(
+                    "INSERT into wi.contact (%s) values (%s) %s%s",
+                    join( ',', @f ),
+                    join( ',', @q ),
+                    "on conflict(street, zip, phone, email)",
+                    "do nothing returning id"
+                );
+                print "$sql\n" if ($DEBUG);
+                print join( '', map { my $o = $_ || ""; "[$o]"; } @v ) . "\n"
+                  if ($DEBUG);
+                my $sth = $dbh->prepare($sql);
+                execReconnect( $sth, @v );
+                my $rs = $sth->fetchall_arrayref( {} );
+                $ids->{$contact} = $rs->[0]->{id};
+            }
           } catch {
           };
-          if (not defined $ids->{$contact}) {
-            my $sql = sprintf("select id from whois_contact where street = ? and zip = ? and phone = ? and email = ?");
+
+          if (not defined $ids->{$contact} and exists $nfo->{$contact}) {
+            my $sql = sprintf("select id from wi.contact where street = ? and zip = ? and phone = ? and email = ?");
             my $sth = $dbh->prepare($sql);
             my @v = map { $nfo->{$contact}->{$_} } qw/street zip phone email/;
             execReconnect($sth,@v);
@@ -204,36 +242,47 @@ do {
           }
         }
 
-        my ($created, $updated);
-        if ($data =~ /^Creation Date: (.*?)$/m) {
+        my ($created, $updated, $expires);
+        if ($data =~ /Creation Date: (.*?)$/m) {
           $created = $1;
           print "created $created\n" if ($DEBUG);
         }
-        if ($data =~ /^Updated Date: (.*?)$/m) {
+        if ($data =~ /Updated Date: (.*?)$/m) {
           $updated = $1;
           print "updated $updated\n" if ($DEBUG)
         }
-        try {
-          my $sth = $dbh->prepare ("INSERT into whois_nfo (domain,created,updated,registrant,admin,tech) values (?,?,?,?,?,?) on conflict do nothing");
-          #          $sth->execute($domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
-          execReconnect($sth,$domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
-        } catch { 
-        };
+        if ($data =~ /Expir(y|ation) Date: (.*?)$/m) {
+          $expires = $2;
+          print "expires $expires\n" if ($DEBUG)
+        }
+        if ( defined $created ) {
+            try {
+                my $sth = $dbh->prepare(
+"INSERT into wi.nfo (domain,created,updated,expires,registrant,admin,tech,billing) values (?,?,?,?,?,?,?,?) on conflict (domain) do update set updated=EXCLUDED.updated,expires=EXCLUDED.expires,registrant=EXCLUDED.registrant,admin=EXCLUDED.admin,tech=EXCLUDED.tech"
+                );
 
-        try {
-          my $sth = $dbh->prepare ("INSERT into whois_servers (url) values (?) on conflict(url) do nothing");
-          execReconnect ($sth,$srv);
-          $sth->finish;
-        } catch {
-        };
+#          $sth->execute($domain, $created, $updated, $ids->{'registrant'}, $ids->{admin}, $ids->{tech});
+                execReconnect( $sth, $domain, $created, $updated, $expires,
+                    $ids->{'registrant'}, $ids->{admin}, $ids->{tech}, $ids->{billing} );
+            }
+            catch {
+            };
 
-        try {
-          my $sth = $dbh->prepare ("update pending_whois set resolved = now() where domain = ?");
-          execReconnect ($sth,$domain);
-          $sth->finish;
-        } catch {
-        };
-
+            #Rate limit exceeded. Try again after:
+            #You have been banned for abuse.
+            #You have exceeded your access quota. Please try again later
+            #IP Address Has Reached Rate Limit
+            return;
+            try {
+                my $sth = $dbh->prepare(
+                    "update wi.pending set resolved = now() where domain = ?"
+                );
+                execReconnect( $sth, $domain );
+                $sth->finish;
+            }
+            catch {
+            };
+        }
         print "\n";
       }};
     send_url();
