@@ -1,0 +1,9 @@
+#!/usr/bin/perl
+#
+# wrapper for easy command line access to perl & pcre
+#   ie. cat files | cperl '/(re)/ && print $1'
+#
+while (<STDIN>) {
+	eval "@ARGV[0]";
+}
+
