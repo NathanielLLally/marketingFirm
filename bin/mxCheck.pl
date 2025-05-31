@@ -70,7 +70,12 @@ foreach (@$batch) {
     my @hosts = mx($dns, $host);
     my $rr = shift @hosts;
     if (not defined $rr) {
-	    print "error no mx record for $email domain $domain\n";
+	    my $error =  "no mx record for hostname $host";
+	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
+	    $sth->execute($email,$error);
+	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
+	    $sth->execute($email);
+	    print "error for email $email: $error\n";
 	    $pm->finish unless( defined $rr );
     }
     my $svr = lc $rr->exchange();
@@ -87,7 +92,13 @@ foreach (@$batch) {
 
     #rule out false positives
     if (not defined $smtp) {
-	    print "error: no smtp connection to $svr for $email\n";
+	    my $error =  "could not connect to smtp server $svr";
+	     print "error for email $email: $error\n";
+
+	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
+	    $sth->execute($email,$error);
+	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
+	    $sth->execute($email);
 	    $pm->finish unless( defined $smtp );
     }
     $smtp->mail($email);
@@ -126,9 +137,12 @@ foreach (@$batch) {
   $pm->finish;
 }
 
+my $sthp = $dbh->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
 	$sthp->execute;
 	$batch= $sthp->fetchall_arrayref({});
+	printf "\n\ngot %u records\n\n".$#{$batch};
 } while ($#{$batch} > -1);
 
+print "exited, waiting\n";
 $pm->wait_all_children;
 $dbh->disconnect;
