@@ -15,6 +15,7 @@ use Coro::AnyEvent;
 use Parallel::ForkManager;
 use Net::DNS;
 use Try::Tiny;
+use Sys::Hostname;
 
 my $count = 0;
 my $maxReq = 200;
@@ -56,7 +57,7 @@ foreach (@$batch) {
     my $svr = $rr->exchange();
     my $smtp = Net::SMTP->new($svr,
 	    Timeout => 30,
-	    Hello => 'mail.obiseo.net',
+	    Hello => hostname,
 	    #Debug   => 1,
     );
 
@@ -99,5 +100,5 @@ foreach (@$batch) {
   };
   $pm->finish;
 }
-
+sleep 5;
 $dbh->disconnect;
