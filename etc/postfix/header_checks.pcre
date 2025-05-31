@@ -1,0 +1,8 @@
+/^From:.*?MAILER-DAEMON.*/
+  REDIRECT bounces@accurateleadinfo.com
+/^From:.*?no-reply.*/
+  REDIRECT bounces@accurateleadinfo.com
+/^Subject:.*?Undelivered Mail Returned to Sender.*/
+   REDIRECT bounces@accurateleadinfo.com
+/^Auto-Submitted: auto-replied.*/
+   REDIRECT bounces@accurateleadinfo.com
