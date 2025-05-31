@@ -26,35 +26,54 @@ my $threads = 30;
 my $pm = Parallel::ForkManager->new($threads);
 my $dns = Net::DNS::Resolver->new;
 
+# a sub to be run *from within the parent thread* at child creation.
+my $init = sub {
+  my ($pid, $ident) = @_;
+  print "++ $ident started, pid: $pid\n";    
+};
+
+# a sub to be run *from within the parent thread* at child termination
+my $finalize = sub {
+  my ($pid, $exit_code, $ident) = @_;
+  print "-- $ident finalized, pid: $pid\n";
+};
+
+# set the subrefs
+$pm->run_on_start($init); 
+$pm->run_on_finish($finalize);
 
 #my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=67.80.53.214", 'postgres', undef, {
-my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=127.0.0.1", 'postgres', undef, {
+my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
       RaiseError => 1,
       InactiveDestroy => 1,
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-my $sth = $dbh->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
-#my $sth = $dbh->prepare ("select email,name,website,uuid from test_pending_email where sent is null");
+my $batch;
+my $sthp = $dbh->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
+$sthp->execute;
+$batch= $sthp->fetchall_arrayref({});
 
-$sth->execute;
-my $batch = $sth->fetchall_arrayref({});
 
-LOOP:
+do {
+
 foreach (@$batch) {
   my ($email) = ($uri->decode($_->{email}));
-  print "$email\n";
-  my $pid = $pm->start and next LOOP;
+  my $pid = $pm->start($email) and next;
 
   try {
   if ($email =~ /\@(.*)$/) {
+    my $host = $1;
     my @parts = reverse split(/\./,$1);
     my $domain = sprintf("%s.%s", $parts[1],$parts[0]);
 
-    my @hosts = mx($dns, $domain);
+    my @hosts = mx($dns, $host);
     my $rr = shift @hosts;
-    $pm->finish unless( defined $rr );
-    my $svr = $rr->exchange();
+    if (not defined $rr) {
+	    print "error no mx record for $email domain $domain\n";
+	    $pm->finish unless( defined $rr );
+    }
+    my $svr = lc $rr->exchange();
     my $smtp = Net::SMTP->new($svr,
 	    Timeout => 30,
 	    Hello => hostname,
@@ -67,7 +86,10 @@ foreach (@$batch) {
     #	}
 
     #rule out false positives
-    $pm->finish unless( defined $smtp );
+    if (not defined $smtp) {
+	    print "error: no smtp connection to $svr for $email\n";
+	    $pm->finish unless( defined $smtp );
+    }
     $smtp->mail($email);
     if ($smtp->to("adln12jqewfkjbrwgsdjh\@$domain")) {
 	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
@@ -91,14 +113,22 @@ foreach (@$batch) {
     }
     $smtp->quit;
 
+    print "resolved $email\n";
     my $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
     $sth->execute($email);
-    $sth->finish;
+
+  } else {
+	  print "error: invalid email $email\n"
   }
   } catch {
 	  print "catch err: $_\n";
   };
   $pm->finish;
 }
-sleep 20;
+
+	$sthp->execute;
+	$batch= $sthp->fetchall_arrayref({});
+} while ($#{$batch} > -1);
+
+$pm->wait_all_children;
 $dbh->disconnect;
