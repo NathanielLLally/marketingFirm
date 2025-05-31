@@ -95,7 +95,7 @@ mail_owner = postfix
 # from gethostname(). $myhostname is used as a default value for many
 # other configuration parameters.
 #
-myhostname = mail.obiseo.net
+myhostname = mail.accurateleadinfo.com
 #myhostname = virtual.domain.tld
 
 # The mydomain parameter specifies the local internet domain name.
@@ -103,7 +103,7 @@ myhostname = mail.obiseo.net
 # $mydomain is used as a default value for many other configuration
 # parameters.
 #
-mydomain = obiseo.net
+mydomain = accurateleadinfo.com
 
 # SENDING MAIL
 # 
@@ -290,6 +290,7 @@ mynetworks_style = host
 #mynetworks = 67.80.53.214/32 172.31.84.58/32 3.225.250.43/32 127.0.0.0/8 10.0.0.0/24
 #mynetworks = $config_directory/mynetworks
 #mynetworks = hash:/etc/postfix/network_table
+mynetworks = 144.91.96.230/32 147.93.146.52/32 194.180.176.214/32
 
 # The relay_domains parameter restricts what destinations this system will
 # relay mail to.  See the smtpd_relay_restrictions and
@@ -745,11 +746,17 @@ home_mailbox = Maildir/
 virtual_alias_maps = hash:/etc/postfix/virtual
 
 smtpd_use_tls = yes
-smtpd_tls_cert_file = /etc/letsencrypt/live/mail.obiseo.net/fullchain.pem
-smtpd_tls_key_file = /etc/letsencrypt/live/mail.obiseo.net/privkey.pem
+smtp_use_tls = yes
+smtpd_tls_cert_file = /etc/letsencrypt/live/mail.accurateleadinfo.com/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/mail.accurateleadinfo.com/privkey.pem
 smtp_tls_security_level = may
 smtpd_tls_security_level = may
 smtp_tls_loglevel = 1
+
+smtpd_tls_protocols = !SSLv2, !SSLv3 
+#smtpd_data_restrictions = reject_unauth_pipelining
+smtpd_data_restrictions =
+smtpd_discard_ehlo_keywords = chunking, silent-discard
 
 smtpd_milters = inet:127.0.0.1:8891
 #smtpd_milters = unix:/var/run/opendkim/opendkim.sock unix:/var/run/opendmarc/opendmarc.sock
@@ -763,12 +770,41 @@ smtpd_sasl_security_options     = noanonymous
 smtpd_sasl_tls_security_options = $smtpd_sasl_security_options
 smtpd_sasl_local_domain         = $mydomain
 smtpd_tls_exclude_ciphers = aNULL, eNULL, EXPORT, DES, RC4, MD5, PSK, aECDH, EDH-DSS-DES-CBC3-SHA, EDH-RSA-DES-CDB3-SHA, KRB5-DES, CBC3-SHA
-broken_sasl_auth_clients        = no
+broken_sasl_auth_clients        = yes
 
 smtp_tls_policy_maps = hash:/etc/postfix/tls_policy
 
-default_destination_rate_delay = 1s
+default_destination_rate_delay = 300s
+#transport_maps =  pcre:/etc/postfix/transport.pcre
+transport_maps =  hash:/etc/postfix/transport
+#sender_dependent_relayhost_maps =  hash:/etc/postfix/sendermap
+internal_mail_filter_classes = bounce notify
+bounces_destination_rate_delay = 1
+bounces_destination_concurrency_limit = 50
+bounces_destination_recipient_limit = 50
+accurateleadinfo_destination_rate_delay = 1
+accurateleadinfo_destination_concurrency_limit = 50
+accurateleadinfo_destination_recipient_limit = 50
+obiseo_destination_rate_delay = 0
+obiseo_destination_concurrency_limit = 10
+obiseo_destination_recipient_limit = 20
+winblows98_destination_rate_delay = 0
+winblows98_destination_concurrency_limit = 10
+winblows98_destination_recipient_limit = 20
 default_destination_recipient_limit = 2
+local_destination_recipient_limit = 300
+local_destination_concurrency_limit = 50
+local_initial_destination_concurrency = 20
+local_destination_concurrency_failed_cohort_limit = 50
+local_destination_rate_delay = 0
+
+smtp_destination_recipient_limit = 15
+smtp_initial_destination_concurrency = 2
+smtp_destination_concurrency_limit = 2
+smtp_destination_concurrency_failed_cohort_limit = 5
+smtp_destination_rate_delay = 1
+
+header_checks = pcre:/etc/postfix/header_checks.pcre
 
     # Don't talk to mail systems that don't know their own hostname.
     # With Postfix < 2.3, specify reject_unknown_hostname.
@@ -778,7 +814,16 @@ default_destination_recipient_limit = 2
 #    smtpd_sender_restrictions = reject_unknown_sender_domain
 
 #https://www.postfix.org/TUNING_README.html#conn_limit
-smtpd_client_connection_rate_limit = 4
-smtpd_client_message_rate_limit = 4
-smtpd_client_recipient_rate_limit = 4
-smtpd_client_new_tls_session_rate_limit = 4
+#smtpd_client_connection_rate_limit = 4
+#smtpd_client_message_rate_limit = 4
+#smtpd_client_recipient_rate_limit = 4
+#smtpd_client_new_tls_session_rate_limit = 4
+
+smtpd_recipient_restrictions = permit_mynetworks
+smtpd_reject_unlisted_recipient = yes
+notify_classes = bounce, 2bounce, delay, policy, protocol, resource, software
+bounce_notice_recipient = bounces@accurateleadinfo.com
+2bounce_notice_recipient = bounces@accurateleadinfo.com
+
+canonical_maps = hash:/etc/postfix/canonical
+
