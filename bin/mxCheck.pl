@@ -43,23 +43,29 @@ $pm->run_on_start($init);
 $pm->run_on_finish($finalize);
 
 #my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=67.80.53.214", 'postgres', undef, {
-my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
+my $dbhp = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
       RaiseError => 1,
-      InactiveDestroy => 1,
-      #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
 my $batch;
-my $sthp = $dbh->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
+my $sthp = $dbhp->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
 $sthp->execute;
 $batch= $sthp->fetchall_arrayref({});
-
+my $n = 0;
+printf "\n\ngot %u records\n\n".$#{$batch};
 
 do {
 
 foreach (@$batch) {
   my ($email) = ($uri->decode($_->{email}));
+  my @children = $pm->running_procs;
+
+  printf "%u of %u threads, %u of %u records before start\n",$#children,$pm->max_procs, ++$n, $#{$batch}+1;
   my $pid = $pm->start($email) and next;
+
+  my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
+      RaiseError => 1,
+    }) or die "cannot connect: $DBI::errstr";
 
   try {
   if ($email =~ /\@(.*)$/) {
@@ -76,6 +82,7 @@ foreach (@$batch) {
 	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
 	    $sth->execute($email);
 	    print "error for email $email: $error\n";
+	    $dbh->disconnect;
 	    $pm->finish unless( defined $rr );
     }
     my $svr = lc $rr->exchange();
@@ -99,6 +106,7 @@ foreach (@$batch) {
 	    $sth->execute($email,$error);
 	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
 	    $sth->execute($email);
+	    $dbh->disconnect;
 	    $pm->finish unless( defined $smtp );
     }
     $smtp->mail($email);
@@ -134,15 +142,26 @@ foreach (@$batch) {
   } catch {
 	  print "catch err: $_\n";
   };
+  $dbh->disconnect;
   $pm->finish;
 }
-
-my $sthp = $dbh->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
+	print "end of loop\n";
+if ($pm->is_parent) {
+	print "getting new batch\n";
+my $dbhp = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
+      RaiseError => 1,
+    }) or die "cannot connect: $DBI::errstr";
+	my $sthp = $dbhp->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
 	$sthp->execute;
 	$batch= $sthp->fetchall_arrayref({});
-	printf "\n\ngot %u records\n\n".$#{$batch};
-} while ($#{$batch} > -1);
+	printf "\n\ngot %u records\n\n",$#{$batch};
+} else {
+	print "why is child reaching here?\n";
+}
+} while ($#{$batch} > -1 and $pm->is_parent);
 
-print "exited, waiting\n";
-$pm->wait_all_children;
-$dbh->disconnect;
+if ($pm->is_parent) {
+	print "exited, waiting\n";
+	$pm->wait_all_children;
+	$dbhp->disconnect;
+}
