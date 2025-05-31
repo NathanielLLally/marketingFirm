@@ -100,5 +100,5 @@ foreach (@$batch) {
   };
   $pm->finish;
 }
-sleep 5;
+sleep 20;
 $dbh->disconnect;
