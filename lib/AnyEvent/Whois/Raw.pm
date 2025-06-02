@@ -157,7 +157,7 @@ sub Net::Whois::Raw::whois_query {
     sub is_blacklisted
     {
         my $srv = shift;
-        print "is_blacklisted($srv) called\n";
+        #print "is_blacklisted($srv) called\n";
         my ($now, $usec) = gettimeofday();
         if (exists $srv{$srv}) {
             if ($now >= $srv{$srv}) {
