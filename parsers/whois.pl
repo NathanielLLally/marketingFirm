@@ -81,25 +81,74 @@ sub send_url {
   $count++;
   $cv->begin;
   {
-    my $url = $u->{url};
     my $cb = $u->{cb};
-    print "whois $url\n";
-    whois $url, timeout => 10, 
+    my $domain = $u->{domain};
+    print "whois $domain\n";
+    whois $domain, timeout => 10, 
     sub {
-      print "returned $url\t";
+      print "returned $domain\t";
       $count--;
       my $data = shift;
-      if ($data and $data =~ /\s*?[Dd]omain/) {
-        my $srv = shift;
-        $cb->($data,$srv,$url);
+      my $srv = shift;
+      if (defined $data and $data =~ /\s*?[Dd]omain/) {
+        $cb->($data,$srv,$domain);
       }
       elsif (! defined $data) {
-        my $srv = shift;
-        print "no information for domain on $srv found\n";
+        my $reason =  "no information for domain on $srv found";
+        print "$reason\n";
+        try {
+          my $sth = $dbh->prepare( "update wi.pending set resolved = now(),registrar = ?, error = ? where domain = ?");
+          execReconnect( $sth, $srv,$reason,$domain );
+        } catch {
+        };
       }
       else {
-        my $reason = shift;
-        print "whois error: $reason\t$data";
+        my $reason = shift || "" . $data;
+        if ($reason =~ /use our RDAP service instead/) {
+            try {
+                my $sth = $dbh->prepare( "update wi.pending set resolved = now(),registrar = ?, error = ? where domain = ?");
+                execReconnect( $sth, $srv,$reason,$domain );
+            } catch {
+            };
+            try {
+                my $sth = $dbh->prepare( "insert into wi.servers (url, use_rdap) values (?,true) on conflict (url) set use_rdap=true");
+                execReconnect( $sth, $srv );
+            }
+            catch {
+            };
+          if ($reason =~ /Try again after: (.*?)\./) {
+            AnyEvent::Whois::Raw::blacklist_srv($srv,$1);
+          }
+        } elsif ($reason =~ /service has been decommissioned/) {
+          try {
+            my $sth = $dbh->prepare( "update wi.pending set resolved = now(),registrar = ?, error = ? where domain = ?");
+            execReconnect( $sth, $srv,$reason,$domain );
+          }
+          catch {
+          };
+            try {
+                my $sth = $dbh->prepare( "insert into wi.servers (url, use_rdap) values (?,true) on conflict (url) set use_rdap=true");
+                execReconnect( $sth, $srv );
+            }
+            catch {
+            };
+        } elsif ($reason =~ /banned for abuse/) {
+            AnyEvent::Whois::Raw::blacklist_srv($srv);
+        } elsif ($reason =~ /please query later/) {
+            AnyEvent::Whois::Raw::blacklist_srv($srv,60);
+        } elsif ($reason =~ /Try again after: (.*?)\./) {
+            AnyEvent::Whois::Raw::blacklist_srv($srv,$1);
+        } elsif ($reason =~ /Address Has Reached Rate Limit/) {
+            AnyEvent::Whois::Raw::blacklist_srv($srv,60);
+        } elsif ($reason =~ /Closing connections because of Timeout/) {
+        } else {
+          print "uncaught whois error from srv [$srv]:$reason";
+          try {
+            my $sth = $dbh->prepare( "update wi.pending set resolved = now(),registrar = ?, error = ? where domain = ?");
+            execReconnect( $sth, $srv,$reason,$domain );
+          } catch {
+          };
+        }
       }
 
       $cv->end; 
@@ -166,7 +215,7 @@ do {
 
   foreach my $row (@$rs) {
     push @urls, {
-      url => $row->{domain},
+      domain => $row->{domain},
       cb => sub {
         my ($data,$srv,$domain) = @_;
         my $nfo = {};
@@ -288,9 +337,7 @@ do {
             #You have exceeded your access quota. Please try again later
             #IP Address Has Reached Rate Limit
             try {
-                my $sth = $dbh->prepare(
-                    "update wi.pending set resolved = now() where domain = ?"
-                );
+                my $sth = $dbh->prepare( "update wi.pending set resolved = now() where domain = ?");
                 execReconnect( $sth, $domain );
                 $sth->finish;
             }
