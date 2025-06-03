@@ -94,7 +94,7 @@ sub _whois {
 		$cb->($res_text, $res_srv);
 	}
 	elsif ($@ !~ /^Call me later/) {
-		$cb->('', $@);
+		$cb->('', $res_srv, $@);
 	}
 }
 
@@ -119,7 +119,7 @@ sub _get_whois {
 		$cb->($res_text, $res_srv);
 	}
 	elsif ($@ !~ /^Call me later/) {
-		$cb->('', $@);
+		$cb->('', $res_srv, $@);
 	}
 }
 
