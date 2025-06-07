@@ -4,8 +4,14 @@ CREATE or REPLACE FUNCTION mx.mxdomain(mx text) RETURNS varchar
     AS $_X$
 use Data::Dumper;
 
-my %tld = map { print $_; $_ => 1; } qw/com org net int edu gov mil/;
-warn Dumper(\%tld);
+my %tld = map { $_ => 1; } qw/com org net int edu gov mil/;
+#warn Dumper(\%tld);
+
+#  ip address
+#
+if ($_[0] =~ /^((\d+)\.?)+$/) {
+  return $_[0];
+}
 
 my @parts = reverse split(/\./,(lc $_[0]));
 
