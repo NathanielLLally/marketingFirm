@@ -55,7 +55,7 @@ my %cbs;
 for my $cb (qw(close connect helo abort envfrom envrcpt header eoh)) {
 	$cbs{$cb} = sub {
 		my $ctx = shift;
-		print "$$: $cb: @_\n";
+                #		print "$$: $cb: @_\n";
 		SMFIS_CONTINUE;
 	}
 }
@@ -65,17 +65,54 @@ $cbs{envrcpt} = sub {
   print "$$: envrcpt: @_\n";
   print Dumper($ctx->{symbols})."\n";
   my $ret = SMFIS_CONTINUE;
-  my $email = $_[0];
+  my $email = $ctx->{symbols}->{R}->{'{rcpt_addr}'};
+
+  print "email $email\n";
   if ($email =~ /\@(.*)$/) {
     my $host = lc($1);
     my @hosts = mx($dns, $host);
     foreach (@hosts) {
       my $svr = lc $_->exchange();
+      print "$email mx $svr\n";
 
       my $count = 0;
       my $limit = 49;
       my $domain;
       try {
+        #   time in seconds since the last status update from mail exchange domain
+        #
+        $dbh = connectDBI;
+        my $sth = $dbh->prepare("select extract(epoch from (now() - max(updated))) as seconds from mx.smtp_status where mx.mxdomain(?) = mxdomain");
+        $sth->execute($svr);
+        my $rs = $sth->fetchall_arrayref({});
+        if ($#{$rs} > -1) {
+          if ($rs->[0]->{seconds} <= 60) {
+            $header = "mx domain rate delay for $svr";
+            syslog $syslog_priority, "header set: $header" if $verbose > 0;
+            print "header set: $header\n" if $verbose > 0;
+          }
+        }
+      } catch {
+      };
+      try {
+        #  any kind of ip or domain based block from this domain
+        #
+        $dbh = connectDBI;
+        my $sth = $dbh->prepare("select extract(epoch from (now() - max(updated))) as seconds from mx.smtp_status where mx.mxdomain(?) = mxdomain");
+        $sth->execute($svr);
+        my $rs = $sth->fetchall_arrayref({});
+        if ($#{$rs} > -1) {
+          if ($rs->[0]->{seconds} <= 60) {
+            $header = "mx domain rate delay for $svr";
+            syslog $syslog_priority, "header set: $header" if $verbose > 0;
+            print "header set: $header\n" if $verbose > 0;
+          }
+        }
+      } catch {
+      };
+      try {
+        #  number of smtp status updates for mail exchange domain within the last day joined with per limit
+        #
         $dbh = connectDBI;
         my $sth = $dbh->prepare('select ct,"limit",mxdomain from (select count(*) as ct,mxdomain from mx.smtp_status where mxdomain = mx.mxdomain(?) and updated >= now() - interval \'1 day\' group by 2) s left join mx.rate_limits l on s.mxdomain = l.domain');
 
@@ -87,6 +124,7 @@ $cbs{envrcpt} = sub {
             $limit = $rs->[0]->{limit};
           }
           $domain = $rs->[0]->{mxdomain};
+          print "count $count limit $limit domain $domain src $svr\n";
         }
         if ($count >= $limit) {
           $header = sprintf "count at limit $limit for srv $svr, $domain, rejecting";
@@ -110,6 +148,7 @@ $cbs{eom} = sub {
       print "adding header 'X-Rate-Limit-Reached', $header\n";
     $ctx->addheader('X-Rate-Limit-Reached', $header);
     syslog $syslog_priority, "adding header X-Rate-Limit-Reached: $header";
+    return SMFIS_TEMPFAIL if ($header =~ /rate delay/);
   }
   $header = undef;
   SMFIS_CONTINUE;
