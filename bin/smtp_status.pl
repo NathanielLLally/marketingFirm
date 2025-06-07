@@ -25,9 +25,9 @@ print LOG `date`;
 my @log;
 if (defined $full) {
 	print LOG "full switch\n";
-	@log = `/usr/bin/journalctl -xt 'postfix/smtp'`;
+	@log = `/usr/bin/journalctl -xt 'mynetwork/smtp' -t 'postfix/smtp'`;
 } else {
-	@log = `/usr/bin/journalctl -xet 'postfix/smtp'`;
+	@log = `/usr/bin/journalctl -xet 'mynetwork/smtp' -t postfix/smtp`;
 }
 
 foreach my $row (@$rs) {

@@ -14,6 +14,9 @@ my $syslog_socktype = 'unix'; # inet, unix, stream, console
 my $syslog_facility = 'mail';
 my $syslog_options  = 'pid';
 my $syslog_priority = 'info';
+
+my $me = 'mail.obiseo.net';
+
 setlogsock $syslog_socktype;
 openlog 'rate_limit_milter', $syslog_options, $syslog_facility;
 
@@ -63,7 +66,7 @@ for my $cb (qw(close connect helo abort envfrom envrcpt header eoh)) {
 $cbs{envrcpt} = sub { 
   my $ctx = shift;
   print "$$: envrcpt: @_\n";
-  print Dumper($ctx->{symbols})."\n";
+  #print Dumper($ctx->{symbols})."\n";
   my $ret = SMFIS_CONTINUE;
   my $email = $ctx->{symbols}->{R}->{'{rcpt_addr}'};
 
@@ -78,6 +81,8 @@ $cbs{envrcpt} = sub {
       my $count = 0;
       my $limit = 49;
       my $domain;
+
+      if ($svr ne $me) {
       try {
         #   time in seconds since the last status update from mail exchange domain
         #
@@ -86,7 +91,7 @@ $cbs{envrcpt} = sub {
         $sth->execute($svr);
         my $rs = $sth->fetchall_arrayref({});
         if ($#{$rs} > -1) {
-          if ($rs->[0]->{seconds} <= 60) {
+          if (defined $rs->[0]->{seconds} and $rs->[0]->{seconds} <= 60) {
             $header = "mx domain rate delay for $svr";
             syslog $syslog_priority, "header set: $header" if $verbose > 0;
             print "header set: $header\n" if $verbose > 0;
@@ -94,18 +99,26 @@ $cbs{envrcpt} = sub {
         }
       } catch {
       };
+    }
       try {
         #  any kind of ip or domain based block from this domain
         #
         $dbh = connectDBI;
-        my $sth = $dbh->prepare("select extract(epoch from (now() - max(updated))) as seconds from mx.smtp_status where mx.mxdomain(?) = mxdomain");
+        my $sth = $dbh->prepare("select * from mx.smtp_bounces where mxdomain = mx.mxdomain(?)");
         $sth->execute($svr);
         my $rs = $sth->fetchall_arrayref({});
         if ($#{$rs} > -1) {
-          if ($rs->[0]->{seconds} <= 60) {
-            $header = "mx domain rate delay for $svr";
+          if ($rs->[0]->{domain_block} > 0) {
+            $header = "domain based bounce within 7 days for $svr";
             syslog $syslog_priority, "header set: $header" if $verbose > 0;
             print "header set: $header\n" if $verbose > 0;
+            return $ret;
+          }
+          if ($rs->[0]->{user_block} >= 3) {
+            $header = "3 or more user based bounces within 7 days for $svr";
+            syslog $syslog_priority, "header set: $header" if $verbose > 0;
+            print "header set: $header\n" if $verbose > 0;
+            return $ret;
           }
         }
       } catch {
