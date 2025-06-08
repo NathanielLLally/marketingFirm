@@ -62,7 +62,7 @@ sub first {
 sub parse 
 {
 	my ($self, $text) = @_;
-	print "$text" if (defined $self->verbose);
+	print "[$text]" if (defined $self->verbose);
 	my %url;
 	my %urlParts;
 
@@ -82,21 +82,29 @@ sub parse
 		}
 	);
 
-
-	print $finder->uri_re."\n".$finder->schemeless_uri_re."\n" if (defined $self->verbose);
+	print "schemess: ".$finder->uri_re."\n".$finder->schemeless_uri_re."\n" if (defined $self->verbose);
 
 	my $count = $finder->find(\$text);
 
-	print "output=".Dumper($self->output)."\n" if (defined $self->verbose);
+    if ($text !~ /\n/s and $count == 0) {
+        my $t = uri_unescape($text);
+        $url{$t}++;
+    }
+
+
+    #	print "output=".Dumper($self->output)."\n" if (defined $self->verbose);
 
 	foreach my $k (keys %url) {
 		$k =~ s/\/$//;
+        my $u = URI->new($k);
+        #print $u->authority if (defined $u);
 
 		#  if ($k =~ /(https?:\/\/)([\w\-\.]+)((\/.*?)(\?.*?))?/)
 		#
 		#  see URI pod, section PARSING URIs WITH REGEXP
 		#
-		if ($k =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|) {
+        if ($k =~ m|(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?|) {
+        #if ($k =~ m|(?^:[a-zA-Z][a-zA-Z0-9\+]*):[\;\/\?\\@\&\=\+\$\,\[\]\p{isAlpha}A-Za-z0-9\-_\.\!\~\*\'\(\)%][\;\/\?\:\@\&\=\+\$\,\[\]\p{isAlpha}A-Za-z0-9\-_\.\!\~\*\'\(\)%#]*(?^:\b\B)|) {
 			$urlParts{$k} = {
 				scheme => $1, 
 				authority => $2,  fqdn => $2, 
@@ -105,6 +113,7 @@ sub parse
 				fragment => $5, 
 				url => $k,
 			};
+            #            print "query ".$urlParts{$k}{query}."\n";
 			my $q = $4;
 			my $u = URI->new($k);
 			if ($urlParts{$k}{scheme} eq "mailto") {
@@ -123,36 +132,13 @@ sub parse
 			my @keys = $u->query_param;
 			if ($#keys >= 0) {
                 $urlParts{$k}{'paramk'} = ();
+                $urlParts{$k}{'params'} = {};
 				foreach (@keys) {
 					if ($_ !~ /^\s/) {
 						push @{$urlParts{$k}{'paramk'}},$_;
+						$urlParts{$k}{'params'}->{$_} = $u->query_param($_);
 					}
 				}
-				#print Dumper($urlParts{$k}{'paramk'});
-				my @k = @{$urlParts{$k}{'paramk'}};
-				my ($last,$first,$next) = $k[-1];
-				foreach my $i (0..($#k - 1)) {
-					($first, $next) = ($k[$i], $k[$i+1]);
-
-					$q =~ /\Q$first\E\=(.*?)\&?\Q$next\E/;
-                    #$urlParts{$k}{'params'}{$first} = uri_escape($1);
-					$urlParts{$k}{'params'}{$first} = $1;
-                    #$p{$first} = uri_escape($1);
-					$p{$first} = $1;
-				}
-                #broken
-				$q =~ /\Q$last\E\=(.*?)\&?/;
-                #$p{$last} = uri_escape($1);
-                $p{$last} = $1;
-
-				$urlParts{$k}{'params'} = \%p;
-
-				my @q;
-				foreach my $k (keys %{$urlParts{$k}{'params'}} ) {
-					my $v = $urlParts{$k}{'params'}->{$k};
-					push @q, "$k\=$v";
-				}
-				$urlParts{$k}{'query'} = join("&", @q);
 			}
 
             if (defined $urlParts{$k}{fqdn}) {
@@ -164,6 +150,8 @@ sub parse
                 $urlParts{$k}{tld} = $parts[-1];
             }
             $self->set_uri($k => $urlParts{$k});
+        } else {
+            print "no match\n" if (defined $self->verbose);
         }
 		# ) = ($1,$2,$4,$5);
 		#  print "$scheme, $fqdn, $path, $query\n" if (defined $Pverbose);
