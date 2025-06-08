@@ -14,6 +14,8 @@ use File::Spec;
 use Try::Tiny;
 use Role::Tiny;
 use ParsePURI;
+use HTML::Packer;
+
 
 sub makeDescription {
   my $html = shift;
@@ -34,7 +36,7 @@ foreach my $k (@k) {
       $r->{$k}->{'query'} =~ s/=%UUID%//;
       $r->{$k}->{'path'} =~ s|^/||;
       if ($r->{$k}->{'path'} =~ /track\.png/) {
-          # printf "tracking pixel domain [%s]\n", $r->{$k}->{'fqdn'};
+        #           printf "tracking pixel domain [%s]\n", $r->{$k}->{'fqdn'};
         $domain = $r->{$k}->{'fqdn'};
         $r->{$k} = undef;
       } else {
@@ -78,8 +80,8 @@ if (exists $untracked{$domain} and scalar keys %{$untracked{$domain}} > 0) {
 if ($#imageTags > -1) {
   $description .= sprintf "embedded image tags [%s]\n", join(",", @imageTags);
 }
-print "outgoing:\n";
-print Dumper(\%outgoing);
+#print "outgoing:\n";
+#print Dumper(\%outgoing);
 if (scalar keys %outgoing > 0) {
   $description .= sprintf "outgoing link domains [%s]\n", join(",",sort keys %outgoing);
 }
@@ -93,7 +95,7 @@ my $cfgFile = File::Spec->catfile($ENV{HOME},'.obiseo.conf');
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
 
-print `date`;
+#print `date`;
 
 my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass},{
       RaiseError => 1,
@@ -107,9 +109,19 @@ my $html = <FH>;
 close FH;
 
 my $description = 'plaintext';
-if ($html =~ /\<html\>/i) {
+if ($html =~ /\<html.*?\>/i) {
   $description = makeDescription($html);
 }
+
+my $packer = HTML::Packer->init();
+$packer->minify( \$html, {
+    remove_comments => 1, 
+    remove_newlines => 1, 
+    do_stylesheet => 'minify', 
+    do_javascript => 'best',
+    do_csp => 'sha512',
+    html5 => 1,
+  } );
 
 
 my ($basename, $path, $suffix) = fileparse($file);
