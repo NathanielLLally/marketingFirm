@@ -58,7 +58,10 @@ my %cbs;
 for my $cb (qw(close connect helo abort envfrom envrcpt header eoh)) {
 	$cbs{$cb} = sub {
 		my $ctx = shift;
-                #		print "$$: $cb: @_\n";
+                #                print "$$: $cb: @_\n";
+                if ($cb eq "envfrom" or $cb eq "header") {
+                  #  print Dumper($ctx->{symbols})."\n";
+}
 		SMFIS_CONTINUE;
 	}
 }
@@ -66,7 +69,7 @@ for my $cb (qw(close connect helo abort envfrom envrcpt header eoh)) {
 $cbs{envrcpt} = sub { 
   my $ctx = shift;
   print "$$: envrcpt: @_\n";
-  #print Dumper($ctx->{symbols})."\n";
+  #  print Dumper($ctx->{symbols})."\n";
   my $ret = SMFIS_CONTINUE;
   my $email = $ctx->{symbols}->{R}->{'{rcpt_addr}'};
 
@@ -109,13 +112,13 @@ $cbs{envrcpt} = sub {
         my $rs = $sth->fetchall_arrayref({});
         if ($#{$rs} > -1) {
           if ($rs->[0]->{domain_block} > 0) {
-            $header = "domain based bounce within 7 days for $svr";
+            $header = "domain based bounce within 7 days for svr $svr";
             syslog $syslog_priority, "header set: $header" if $verbose > 0;
             print "header set: $header\n" if $verbose > 0;
             return $ret;
           }
           if ($rs->[0]->{user_block} >= 3) {
-            $header = "3 or more user based bounces within 7 days for $svr";
+            $header = "3 or more user based bounces within 7 days for svr $svr";
             syslog $syslog_priority, "header set: $header" if $verbose > 0;
             print "header set: $header\n" if $verbose > 0;
             return $ret;
