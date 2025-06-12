@@ -26,7 +26,7 @@ use Sys::Hostname;
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
 if (not -e $cfgFile) {
-	$cfgFile = $ENV{HOME}."/.obiseo.conf";
+	$cfgFile = $ENV{HOME}."/.sendmail.conf";
 }
 our $CFG = Config::Tiny->read( $cfgFile );
 
@@ -60,7 +60,7 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-my $sth = $dbh->prepare("select basename,content from email_content where id = ?");
+my $sth = $dbh->prepare("select basename,content from public.email_content where id = ?");
 $sth->execute($cid);
 my $res = $sth->fetchall_arrayref({});
 if ($#{$res} < 0) {
