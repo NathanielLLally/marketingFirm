@@ -22,11 +22,12 @@ use Try::Tiny;
 use lib '/home/nathaniel/src/git/marketingFirm/lib';
 use ParsePURI;
 use Sys::Hostname;
+use IO::Tee;
 
 my $dirname = dirname(__FILE__);
-my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
+my $cfgFile = File::Spec->catfile($ENV{HOME}, '.sendmail.conf');
 if (not -e $cfgFile) {
-	$cfgFile = $ENV{HOME}."/.sendmail.conf";
+	$cfgFile = $ENV{HOME}."/.obiseo.conf";
 }
 our $CFG = Config::Tiny->read( $cfgFile );
 
@@ -34,23 +35,21 @@ our $CFG = Config::Tiny->read( $cfgFile );
   #  my $smtpuser     = 'sales@grandstreet.group';
   #  my $smtppassword = 'xmno vbhe bwkx ptgz';
 
-my $logfile = "sendMail.log";
-
-open(LOG, ">>/home/nathaniel/$logfile") || die "cannot open log";
-open(STDOUT, ">&LOG");
-open(STDERR, ">&LOG");
-select STDOUT;
-
+my $logfile = "/home/nathaniel/sendMail.log";
+open my $LOG, ">>", $logfile or die "open $logfile failed\n";
+my $tee = IO::Tee->new(\*STDOUT, $LOG);
+open STDERR, ">&STDOUT";
+select $tee;
 print `date`;
 
-#close(STDOUT);
-#close(STDERR);
-#open(STDOUT, ">>$logfile");
-#open(STDERR,">>$logfile");
-
 # create a signer object
+sub printUsage
+{
+  print "$0 cid\n\n";
+  exit;
+}
 
-my $cid = shift @ARGV;
+my $cid = shift @ARGV || printUsage;
 my $sendPerMinute = shift @ARGV || 4;
 
 
@@ -60,13 +59,14 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
       #    AutoCommit => 1,
     }) or die "cannot connect: $DBI::errstr";
 
-my $sth = $dbh->prepare("select basename,content from public.email_content where id = ?");
+my $sth = $dbh->prepare("select basename,content,subject,\"from\",unsubscribe from email_content where id = ?");
 $sth->execute($cid);
 my $res = $sth->fetchall_arrayref({});
 if ($#{$res} < 0) {
   die "no cid [$cid]!!";
 }
 my $HTML = $res->[0]->{content};
+my ($from,$subject,$unsubscribe) = map { $res->[0]->{$_} } qw/from subject unsubscribe/;
 
 my $hostname = hostname();
 
@@ -117,26 +117,41 @@ do {
     my $html = $HTML;
     $html =~ s/%UUID%/$uuid/g;
 
-    my $p = ParsePURI->new();
-    $p->parse($website);
-    $website = $p->first->{fqdn} || $website;
+    if (defined $website and length($website) > 0) {
+      my $p = ParsePURI->new();
+      $p->parse($website);
+      $website = $p->first->{fqdn} || $website;
+      $html =~ s/%WEBSITE%/$website/g;
+    }
 
-    $html =~ s/%WEBSITE%/$website/g;
     $html =~ s/%NAME%/$name/g;
-    print "pid $pid sending $email cid $cid uuid $uuid\n";
+    print "pid $pid sending $email cid $cid uuid $uuid\t";
   
     #    if (defined $name and length($name) > 0) {
     #      $subject = "$name, do you want more money?"; 
     #    }
-    if (defined $website and length($website) > 0) {
-    }
     try {
-	my $s = send_my_mail($_, $html);
-        my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ? where uuid = ?");
-        $isth->execute($s, $uuid);
+	my ($s,$r) = send_mail($_, $html);
+  my $status = $r->{message};
+  chomp $status;
+  $status =~ s/\s+$//;
+  print "$status\n";
+  my $qid;
+  if ($status =~ /queued as (.*?)$/) {
+    $qid = $1;
+  }
+        my $isth = $dbh->prepare ("update track_email set sent = now(),subject = ?,status = ? where uuid = ?");
+        $isth->execute($s, $status, $uuid);
         $isth->finish;
+
+        if (defined $qid) {
+          my $isth = $dbh->prepare ("update track_email set qid = ? where uuid = ?");
+          $isth->execute($qid, $uuid);
+          $isth->finish;
+        }
+        
     } catch {
-	print "failed to send to [$email], defering\n";
+	print "failed to send to [$email] $_, defering\n";
         my $isth = $dbh->prepare ("update track_email set defer = now() where uuid = ?");
         $isth->execute($uuid);
         $isth->finish;
@@ -157,74 +172,73 @@ $dbh->disconnect;
 
 exit;
 
-sub send_my_mail {
+sub send_mail {
   my ($ctx, $body_text) = @_;
-  my ($to_mail_address, $name, $website, $uuid) = ($ctx->{email}, $ctx->{uuid}, $ctx->{name}, $ctx->{website});
+  my ($uuid, $name, $website) = ($ctx->{uuid}, $ctx->{name}, $ctx->{website});
 
-  my $to = Email::Valid->address($to_mail_address);
+
+  my $to = Email::Valid->address($ctx->{email});
   if (not defined $to) {
-	  print "invalid email [$to_mail_address]\n";
+	  printf "invalid email [%s]\n", $ctx->{email};
 	  die "invalid email";
   }
 
   my $ke = sprintf("cid%s",$cid);
-  if (not exists $CFG->{$ke}) {
-    die "no config for cid $cid!";
-  }
-  my $unsub = $CFG->{$ke}->{unsubscribe};
+  my $unsub = $CFG->{$ke}->{unsubscribe} || $unsubscribe;
   $unsub =~ s/%UUID%/$uuid/;
 
-    my $subject;
+    my $subj;
     #= "Do you want to advertise for $website?"; 
-    $subject = $CFG->{$ke}->{subject} || 'Hello there, how are you today?';
-    $subject =~ s/%UUID%/$uuid/g;
-    $subject =~ s/%WEBSITE%/$website/g;
-    $subject =~ s/%NAME%/$name/g;
+    $subj = $CFG->{$ke}->{subject} || $subject;
+    $subj =~ s/%UUID%/$uuid/g;
+    $subj =~ s/%WEBSITE%/$website/g;
+    $subj =~ s/%NAME%/$name/g;
+
+
+    $from = $CFG->{$ke}->{from} || $from;
+
+    if (not defined $from or not defined $subj) {
+      die "email missing fields:\nfrom [$from]\nsubject:$subj\nunsubscribe header:$unsub\n"; 
+    }
 
     my $email;
-    if ($body_text =~ /\<html\>/i) {
-  $email = Mail::Builder::Simple->new({
-		  subject => $subject,
-		  from => $CFG->{$ke}->{from},
-		  to => $to,
-		  htmltext => $body_text,
-		  mail_client => {
-			  mailer => 'SMTPS',
-			  mailer_args => {
-    host          => $CFG->{smtp}->{server},
-    ssl           => 'starttls',
-    port          => $CFG->{smtp}->{port},
-    sasl_username => $CFG->{smtp}->{user},
-    sasl_password => $CFG->{smtp}->{pass},
-    debug => 0
-		  }
-	  }
-	  });
-      } else {
-  $email = Mail::Builder::Simple->new({
-		  subject => $subject,
-		  from => $CFG->{$ke}->{from},
-		  to => $to,
-		  plaintext => $body_text,
-		  mail_client => {
-			  mailer => 'SMTPS',
-			  mailer_args => {
-    host          => $CFG->{smtp}->{server},
-    ssl           => 'starttls',
-    port          => $CFG->{smtp}->{port},
-    sasl_username => $CFG->{smtp}->{user},
-    sasl_password => $CFG->{smtp}->{pass},
-    debug => 0
-		  }
-	  }
-	  });
+    if ($body_text =~ /<html.*?>/i) {
+      $email = Mail::Builder::Simple->new({
+          subject => $subj,
+          from => $from,
+          to => $to,
+          htmltext => $body_text,
+        });
+    } else {
+      $email = Mail::Builder::Simple->new({
+          subject => $subj,
+          from => $from,
+          to => $to,
+          plaintext => $body_text,
+        });
+    }
+    #printf "smtp config: %s:%s %s %s\n", $CFG->{smtp}->{server}, $CFG->{smtp}->{port}, $CFG->{smtp}->{user}, $CFG->{smtp}->{pass};
+
+    my %opts = (
+      mail_client => {
+        mailer => 'SMTPS',
+        mailer_args => {
+          host          => $CFG->{smtp}->{server},
+          port          => $CFG->{smtp}->{port},
+          ssl           => 1,
+          sasl_username => $CFG->{smtp}->{user},
+          sasl_password => $CFG->{smtp}->{pass},
+          debug => 0
+        }
       }
+    );
+    if (defined $unsub) {
+      $opts{'List-Unsubscribe-Post'} = 'List-Unsubscribe=One-Click';
+      $opts{'List-Unsubscribe'} = $unsub;
+    }
 
-
-  $email->send(
-	'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
-  	'List-Unsubscribe' => $unsub,
-  );
-  return $subject;
+    # get rid of X-Mailer header
+    my $res = $email->send( %opts);
+    return ($subj,$res);
 }
 
