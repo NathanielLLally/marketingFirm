@@ -106,6 +106,9 @@ sub send_url {
         } catch {
           print "update error: $_\n";
         };
+      } elsif ($hdr->{Status} == 403) {
+      #try again later
+      push @urls, {url => $url, cb => $cb};
 
       } else {
         print Dumper($hdr);
@@ -190,6 +193,7 @@ if (defined $Pcat) {
   $sth = $dbh->prepare("insert into pending_yp (url) select concat('https://yellowpages.com',url) from yellow_pages_citycat");
   $sth->execute();
 
+  exit;
 }
 
 
