@@ -75,10 +75,10 @@ EOF
 } else {
 $sql = <<EOF
   select count(*) as remain, null as requests from $table
-  where resolved is null and host = $host
+  where resolved is null and host = '$host' 
   union
   select null as remain, count(*) as requests from $table
-  where resolved is not null and host = $host
+  where resolved is not null and host = '$host'
 EOF
 ;
 }
