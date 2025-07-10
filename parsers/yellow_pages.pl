@@ -36,7 +36,9 @@ use Time::HiRes qw(time gettimeofday tv_interval);
 use Config::Tiny;
 use File::Basename;
 use File::Spec;
+use Sys::Hostname;
 
+my $host = hostname();
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($ENV{HOME}, '.obiseo.conf');
@@ -123,7 +125,18 @@ sub send_url {
 
 $| = 1;
 
-if (defined $Pcat) {
+if (defined $Pcat and $Pcat eq "pending") {
+  my $sth = $dbh->prepare("delete from pending_yp");
+  $sth->execute();
+  $sth = $dbh->prepare("insert into pending_yp (url,host)
+    select concat('https://yellowpages.com',url) as url, 
+    ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com,mail.winblows98.com}'::text[])[floor(random()*4)]
+    as host
+    from yellow_pages_citycat
+    ");
+  $sth->execute();
+
+} elsif (defined $Pcat) {
 
   $cv->begin;
 
@@ -199,9 +212,9 @@ if (defined $Pcat) {
 
 #my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
 
-my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ? and random() < 0.01 limit 10");
 
-$sth->execute();
+$sth->execute($host);
 my $rs = $sth->fetchall_arrayref({});
 
 $cv->begin;
@@ -229,8 +242,8 @@ do {
             $pageTotal = int($pageTotalN / $pageN)+1;
             foreach my $n (2..$pageTotal) {
               try {
-                my $sth = $dbh->prepare ("INSERT into pending_yp (url) values (?) on conflict do nothing");
-                $sth->execute (sprintf("%s?page=%s",$newurl,$n));
+                my $sth = $dbh->prepare ("INSERT into pending_yp (url,host) values (?,?) on conflict do nothing");
+                $sth->execute (sprintf("%s?page=%s",$newurl,$n),$host);
                 $sth->finish;
               } catch {
               };
