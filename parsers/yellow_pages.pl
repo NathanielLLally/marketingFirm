@@ -111,7 +111,7 @@ sub send_url {
       $count--;
       $cv->end; 
       send_url() 
-    };
+    });
   }
 }
 
