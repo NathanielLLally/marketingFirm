@@ -39,7 +39,7 @@ use File::Spec;
 
 
 my $dirname = dirname(__FILE__);
-my $cfgFile = File::Spec->catfile($dirname, '..','etc','obiseo.conf');
+my $cfgFile = File::Spec->catfile($ENV{HOME}, '.obiseo.conf');
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
 
