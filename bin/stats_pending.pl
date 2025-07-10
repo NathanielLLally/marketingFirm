@@ -31,6 +31,7 @@ my $interval = 10;
 my $hist = 12;
 
 my $table = shift @ARGV || 'pending';
+my $host = shift @ARGV;
 
 $SIG{HUP} = sub {
   print "process began @\t$begin\n";
@@ -60,7 +61,10 @@ sub execReconnect
 
 sub getStats {
   #  my $sth = $dbh->prepare("select count(*) as remain, null as requests from pending where resolved is null and url not like '%page=%' union select null as remain, count(*) as requests from pending where resolved is not null and url not like '%page=%'");
-my $sql = <<EOF
+ 
+my $sql;
+if (not defined $host) {
+$sql = <<EOF
   select count(*) as remain, null as requests from $table
   where resolved is null 
   union
@@ -68,6 +72,16 @@ my $sql = <<EOF
   where resolved is not null
 EOF
 ;
+} else {
+$sql = <<EOF
+  select count(*) as remain, null as requests from $table
+  where resolved is null and host = $host
+  union
+  select null as remain, count(*) as requests from $table
+  where resolved is not null and host = $host
+EOF
+;
+}
   my $sth = $dbh->prepare($sql);
   execReconnect($sth);
   my $rs = $sth->fetchall_arrayref({});
