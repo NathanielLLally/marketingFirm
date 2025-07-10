@@ -31,6 +31,7 @@ use Coro;
 use AnyEvent;
 use Coro::AnyEvent;
 use AnyEvent::HTTP;
+use AnyEvent::UserAgent;
 use PURI;
 use Time::HiRes qw(time gettimeofday tv_interval);
 use Config::Tiny;
@@ -39,6 +40,7 @@ use File::Spec;
 use Sys::Hostname;
 
 my $host = hostname();
+my $ua = AnyEvent::UserAgent->new;
 
 my $dirname = dirname(__FILE__);
 my $cfgFile = File::Spec->catfile($ENV{HOME}, '.obiseo.conf');
@@ -83,37 +85,27 @@ sub send_url {
     my $url = $u->{url};
     my $cb = $u->{cb};
     print "http_get $url\n";
-    http_get $url, timeout => 10, 
+    $ua->get( $url, timeout => 10, 
     sub { 
-      my ($body, $hdr) = @_;
+      my ($res) = @_;
       print "returned $url ";
 
-      my $h = HTTP::Headers->new();
-      foreach my $k (keys %$hdr) {
-        my $v = $hdr->{$k};
-        $h->header( $k => $v );
-      }
-      my $m = HTTP::Message->new($h, $body);
-      if ($hdr->{Status} =~ /^2/) {
+      if ($res->is_success) {
         print "parsing\n";
         my $parser = new HTML::TreeBuilder::Select; 
-        $parser->parse_content($m->decoded_content()) || croak;
-        $cb->($url,$hdr,$parser);
-      } elsif ($hdr->{Status} == 404) {
+        $parser->parse_content($res->decoded_content()) || croak;
+        $cb->($url,$parser);
+      } elsif ($res->code == 404) {
         print "not found\n";
         try {
           my $sth = $dbh->prepare ( "update pending_yp set resolved = now(), status = ? where url = ?");
-          $sth->execute ( $hdr->{Status}, $url );
+          $sth->execute ( $res->code, $url );
           $sth->finish;
         } catch {
           print "update error: $_\n";
         };
-      } elsif ($hdr->{Status} == 403) {
-      #try again later
-      push @urls, {url => $url, cb => $cb};
-
       } else {
-        print Dumper($hdr);
+        print $res->status_line;
       }
 
       $count--;
@@ -143,7 +135,7 @@ if (defined $Pcat and $Pcat eq "pending") {
   my $url = "https://www.yellowpages.com/categories";
   print "fetching categories\n";
   push @urls, {url => $url, cb => sub {
-      my ($url, $hdr, $parser) = @_;
+      my ($url, $parser) = @_;
       my @a = $parser->look_down(_tag => 'a');
       foreach my $el (@a) {
         if ($el->attr('href') =~ /categories\/([\w\-]+)/) {
@@ -177,7 +169,7 @@ if (defined $Pcat and $Pcat eq "pending") {
         "https://www.yellowpages.com/categories/",
         $row->{category}),
       cb => sub {
-        my ($url, $hdr, $parser) = @_;
+        my ($url, $parser) = @_;
         my @a = $parser->look_down(_tag => 'a');
         foreach my $el (@a) {
           my $cat = $row->{category};
@@ -227,7 +219,7 @@ do {
     push @urls, {
       url => $url,
       cb => sub {
-        my ($url, $hdr, $parser) = @_;
+        my ($url, $parser) = @_;
 
         #
         #  look for page count, insert generated links into pending
