@@ -204,7 +204,8 @@ if (defined $Pcat and $Pcat eq "pending") {
 
 #my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
 
-my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ? and random() < 0.01 limit 10");
+#my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ? and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ?");
 
 $sth->execute($host);
 my $rs = $sth->fetchall_arrayref({});
