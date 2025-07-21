@@ -74,7 +74,6 @@ sub on_return {
 
   print "returned $website\n";
 
-  my $m = HTTP::Message->new($h, $body);
   if ($res->is_success) {
     #
     $parser->parse_content($res->decoded_content()) || croak;
@@ -92,8 +91,8 @@ sub on_return {
           #          print Dumper($res->headers);
           #print Dumper(\$array);
           try {
-            my $sth = $dbh->prepare ("INSERT into email (email,website, hdrurl) values (?,?,?) on conflict(email,website) do nothing");
-            $sth->execute ($email, $website, $res->header('URL'));
+            my $sth = $dbh->prepare ("INSERT into email (email,website) values (?,?) on conflict(email,website) do nothing");
+            $sth->execute ($email, $website);
             $sth->finish;
           } catch {
           };
