@@ -5,6 +5,7 @@ use Modern::Perl;
 use Try::Tiny;
 use DBI;
 use DBD::CSV;
+use utf8;
 use LWP;
 #use LWP::Debug qw(+);
 use Data::Dumper;
