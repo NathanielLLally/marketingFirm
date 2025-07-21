@@ -32,8 +32,11 @@ use Coro;
 use AnyEvent;
 use Coro::AnyEvent;
 use AnyEvent::HTTP;
+use AnyEvent::UserAgent;
 use PURI;
 use Time::HiRes qw(time gettimeofday tv_interval);
+
+my $ua = AnyEvent::UserAgent->new;
 
 my $cv = AnyEvent->condvar;
 my $count = 0;
@@ -64,22 +67,17 @@ sub on_return {
 
   no warnings;
   our $parser = new HTML::TreeBuilder::Select; 
-  my ($website, $body, $hdr) = @_;
+  my ($website, $res) = @_;
   my $h = PURI::parse($website);
   my @ke = keys %$h;
   my $origin = $h->{$ke[0]}->{fqdn};
 
   print "returned $website\n";
 
-  my $h = HTTP::Headers->new();
-  foreach my $k (keys %$hdr) {
-    my $v = $hdr->{$k};
-    $h->header( $k => $v );
-  }
   my $m = HTTP::Message->new($h, $body);
-  if ($hdr->{Status} =~ /^2/) {
+  if ($res->is_success) {
     #
-    $parser->parse_content($m->decoded_content()) || croak;
+    $parser->parse_content($res->decoded_content()) || croak;
     #$parser->parse_content($body) || croak;
     my @a = $parser->look_down(_tag => 'a');
     foreach my $el (@a) {
@@ -91,10 +89,11 @@ sub on_return {
           #mailto: might be responsible for breaking crm import
 
 
+          #          print Dumper($res->headers);
           #print Dumper(\$array);
           try {
             my $sth = $dbh->prepare ("INSERT into email (email,website, hdrurl) values (?,?,?) on conflict(email,website) do nothing");
-            $sth->execute ($email, $website, $hdr->{URL});
+            $sth->execute ($email, $website, $res->header('URL'));
             $sth->finish;
           } catch {
           };
@@ -120,9 +119,9 @@ sub on_return {
         }
       } 
     }
-  } elsif ($hdr->{Status} == '404') {
+  } elsif ($res->code == '404') {
     my $sth = $dbh->prepare ("update pending set resolved = now(),status = ? where url = ?");
-    $sth->execute($hdr->{Status}, $website);
+    $sth->execute($res->code, $website);
     $sth->finish;
   }
 
@@ -167,8 +166,8 @@ sub send_url {
     $seen{$u} = 1;
     print ".";
     my $url = $u;
-    http_get $url, timeout => 10, 
-    sub { my ($body, $hdr) = @_; $count--; on_return($url,$body,$hdr); $cv->end; send_url() };
+    $ua->get( $url, timeout => 10, 
+      sub { my ($res) = @_; $count--; on_return($url,$res); $cv->end; send_url() });
   } else {
     push @urls, $u;
     send_url();
