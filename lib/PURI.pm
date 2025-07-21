@@ -92,12 +92,12 @@ sub parse
                     #$p{$first} = uri_escape($1);
 					$p{$first} = $1;
 				}
-      }
                 #broken
 				$q =~ /\Q$last\E\=(.*?)\&?/;
                 #$p{$last} = uri_escape($1);
                 $p{$last} = $1;
 
+      }
 				$urlParts{$k}{'params'} = \%p;
 				my @q;
 				foreach ( my ($k, $v) = each %{$urlParts{$k}{'params'}} ) {
