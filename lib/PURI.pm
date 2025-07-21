@@ -80,6 +80,7 @@ sub parse
 					}
 				}
 				#print Dumper($urlParts{$k}{'paramk'});
+        if (defined $urlParts{$k}{'paramk'}) {
 				my @k = @{$urlParts{$k}{'paramk'}};
 				my ($last,$first,$next) = $k[-1];
 				foreach my $i (0..($#k - 1)) {
@@ -91,6 +92,7 @@ sub parse
                     #$p{$first} = uri_escape($1);
 					$p{$first} = $1;
 				}
+      }
                 #broken
 				$q =~ /\Q$last\E\=(.*?)\&?/;
                 #$p{$last} = uri_escape($1);
