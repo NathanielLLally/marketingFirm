@@ -19,6 +19,8 @@ my $dbh = DBI->connect($CFG->{dB}->{dsn}, $CFG->{dB}->{user}, $CFG->{dB}->{pass}
   my $mailq_output = `mailq`;
 
   my $entries = Postfix::Parse::Mailq->read_string($mailq_output);
+
+
 my $bytes = 0;
 
 my $DEBUG = 1;
@@ -39,6 +41,7 @@ for my $el (@$entries) {
     push @{ $rcptForIds{$rcpt} }, $el;
 }
 
+
 ## Please see file perltidy.ERR
 my %count = ( pending => 0, dup => 0, defer => 0 );
 foreach my $k (keys %dup) {
@@ -46,6 +49,8 @@ foreach my $k (keys %dup) {
 
 		my $anyError = '';
 		foreach my $el (@{$rcptForIds{$k}}) {
+      #remove msg from queue
+      #		`sudo postsuper -d $el->{queue_id}`;
 
 			#      printf "%s\t%s\t%s\n", $el->{queue_id}, $el->{date}, $el->{error_string} || "no error" if ($DEBUG);
 			$anyError = $anyError."\t|\t".$el->{error_string} if (defined $el->{error_string});

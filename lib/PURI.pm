@@ -70,6 +70,7 @@ sub parse
 			#
 			my %p;
 			tie %p, 'Tie::IxHash';
+      if ( $u->can('query_param')) {
 			my @keys = $u->query_param;
 			if ($#keys >= 0) {
                 $urlParts{$k}{'paramk'} = ();
@@ -79,6 +80,7 @@ sub parse
 					}
 				}
 				#print Dumper($urlParts{$k}{'paramk'});
+        if (defined $urlParts{$k}{'paramk'}) {
 				my @k = @{$urlParts{$k}{'paramk'}};
 				my ($last,$first,$next) = $k[-1];
 				foreach my $i (0..($#k - 1)) {
@@ -95,14 +97,15 @@ sub parse
                 #$p{$last} = uri_escape($1);
                 $p{$last} = $1;
 
+      }
 				$urlParts{$k}{'params'} = \%p;
-
 				my @q;
 				foreach ( my ($k, $v) = each %{$urlParts{$k}{'params'}} ) {
 					push @q, "$k\=$v";
 				}
 				$urlParts{$k}{'query'} = join("&", @q);
 			}
+        }
 
             if (defined $urlParts{$k}{fqdn}) {
                 my @parts = split(/\./,$urlParts{$k}{fqdn});
