@@ -20,6 +20,7 @@ use File::Basename;
 use File::Spec;
 use Try::Tiny;
 use lib '/home/nathaniel/src/git/marketingFirm/lib';
+use Quotes;
 use ParsePURI;
 use Sys::Hostname;
 use IO::Tee;
@@ -100,6 +101,7 @@ if ($threads < 0) {
 }
 print "using $threads threads\n";
 my $pm = Parallel::ForkManager->new($threads);
+my $quotes = new Quotes();
 
 do {
 
@@ -125,6 +127,9 @@ do {
     }
 
     $html =~ s/%NAME%/$name/g;
+
+    my $quote = $quotes->randomQuote();
+    $html =~ s/%QUOTE%/$quote/g;
     print "pid $pid sending $email cid $cid uuid $uuid\t";
   
     #    if (defined $name and length($name) > 0) {
