@@ -69,3 +69,5 @@ select email from track_email_clicks c join track_email t on c.email_uuid = t.uu
 --name,website of people who clicked on contact_us
 select yp.name,yp.website,e.email from yp.yellow_pages yp join email e on e.website=yp.website join track_email t on t.email=e.email join track_email_clicks c on t.uuid = c.email_uuid where tag='contact_us';
 
+--load emails
+\copy track_email_load (email,name,website, cid) from '/tmp/dog_training.csv';
