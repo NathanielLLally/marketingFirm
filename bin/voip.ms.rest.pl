@@ -12,8 +12,6 @@ use DBI;
 use Getopt::Long::Descriptive;
 use Text::ANSITable;
 
-binmode(STDOUT,":utf8");
-
 our $DEBUG = 0;
 
 my ($mode, $did, $contact, $message, @media) = ('check', '7025515025', '6464507917', undef);
@@ -41,6 +39,9 @@ my ($opt, $usage) = describe_options(
 
 print($usage->text), exit if ($opt->help or not exists $opt->{mode});
 
+if (exists $opt->{verbose}) {
+  $DEBUG = 1; 
+}
 if ($opt->{mode} eq 'send') {
     if (not exists $opt->{message}) {
         print ($usage->text);
