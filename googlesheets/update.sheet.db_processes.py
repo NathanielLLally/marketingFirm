@@ -132,16 +132,17 @@ def main():
     ['linkedin people',''],
     ]
 
-  rs = sheet.db_fetch("with p as (select regexp_replace(page,'-.*','') as l, regexp_replace(page,'.*-','')::integer as n from pending_lip where resolved is not null) select max(l) as l,max(n)-1 as n from p where l = (select max(l) from p);")
+#  rs = sheet.db_fetch("with p as (select regexp_replace(page,'-.*','') as l, regexp_replace(page,'.*-','')::integer as n from pending_lip where resolved is not null) select max(l) as l,max(n)-1 as n from p where l = (select max(l) from p);")
 
   data.append(['',' current max page'])
   row = ['']
-  row.extend(rs[1])
+#  row.extend(rs[1])
+  row.extend(['hard coded'])
   data.append(row)
 
-  rs = sheet.db_fetch("select count(*) as c from lipd;")
+#  rs = sheet.db_fetch("select count(*) as c from lipd;")
   row = ['']
-  row.extend(rs[1])
+  row.extend([5])
 
   data.append(['',' lipd record count'])
   data.append(row)

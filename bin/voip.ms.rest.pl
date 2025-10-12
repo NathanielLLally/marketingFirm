@@ -11,6 +11,7 @@ use Time::Piece;
 use DBI;
 use Getopt::Long::Descriptive;
 use Text::ANSITable;
+use LWP::ConsoleLogger::Easy qw( debug_ua );
 
 our $DEBUG = 0;
 
@@ -61,6 +62,7 @@ my $json = JSON->new->allow_nonref;
 my $client = REST::Client->new({
         host => 'https://voip.ms'
     });
+
 
 my %data = (
     api_username => '',
