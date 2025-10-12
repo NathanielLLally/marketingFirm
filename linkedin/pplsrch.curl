@@ -1,0 +1,15 @@
+curl 'https://www.linkedin.com/directory/people-search?trk=homepage-basic_directory_peopleSearchDirectoryUrl' \
+  -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -b 'bcookie="v=2&15b5a76d-11ba-4786-8af2-2afdbaac07d6"; bscookie="v=1&20250818155839f02f4d4e-c425-426f-89cc-e4fe849c1d03AQHXzHiQ3MSuC_VjrIhkZ-STLPuqwnDu"; lidc="b=VGST08:s=V:r=V:a=V:p=V:g=3296:u=1:x=1:i=1755532720:t=1755619120:v=2:sig=AQH-gXAGeNBDRpkgvq8ZQPhsSShu9I9G"; dfpfpt=cb1ace031b3644d5a2ebdc6fc5a2de36; aam_uuid=19315875602930258040026369598789128217; recent_history=AQEQUEcxMVDjOQAAAZi-EuYY-jwf7mZdWcafJfb1kcK7VWy8OlYEgtUQ3G76Y0GsLhY1kx0U8xpEODnOxsWcjWiyyM_Di_YgZg_sYZp4cBjEZu5hAhBbOo31SBzf87Cs9rkit1yaLY45eb_isis-hdvBcSJaZzEkLRAozlwo-BNy05jEMMPHNyN4LYidxuxWXe2hHZEMVWaey8cS0DLcQ2aXMaZn1HaUKzWC4CsozaCaq4Vl4jJKhu_6ywHr1w; rtc=AQHXHBIMnLqqGwAAAZi-bYfQz8UNKwJKRG63OzJ1pXsCxsJEP2g60NX4xHrrvWgWecm95Fq7daYhn9or-xRmWpnFYQY25MZmLYTW046x_VyMpkB5AUhBtYpn1F8lOqtwug0qPmGNsbp0JFjEx6CFi2lzmm04RW8OMZnOVJBi8K0RZGGdjVQrT7LosVHZk_JyUKtZRcvkH9imK5Da3thOeWR-HXL87qdgcstTKxA0; __cf_bm=gRXlPLg29KI0OBq6lHvCSNRvBAuQhUABG.55yEKdd30-1755541506-1.0.1.1-8rYTl9rZuL6.gV1jCI4MdO4by4yS2ECRJHS.zc4GK519KPlzc8K1yDJPnM4T2ZZw7gouYLSr.yuQFhWSTouVCcUPypffXna7dEU5USs07SA; fid=AQG8K3V2w8ukYgAAAZi-bYv-EMSntNe6AxY4OdW4Q6itmHWKTENYJ62EZNF0jPZPigJKyRBd6B3WRw; JSESSIONID=ajax:4116456004044468718; lang=v=2&lang=en-us; fptctx2=taBcrIH61PuCVH7eNCyH0I1otfYAPn9VOPY9aMX8tO3rUhCnbliKCQe1XJZMT494RUlvlmBu%252bhaewIAlPprwbQWsZg7cEexGlrmzz0X4ojK79fqjYdR8r5HWBpqOnw0YnzlH5SMJH86LaWJI3z%252fwCodSHtRsAZwV9c0oS2fc%252frfSRZMsSaBlaVwi4cYLtOpJoykdu550jdLvzVbJTmm%252bHy518rP66nQ2e3iBlKgeY5W6iHcP38JZAWA0HgWLHgijQuO8c3DAmWrqmjEezBswwku9g93sTfSe4tJEbQhLDvWNtbiGEPebkWchxGC927axNw%252b2Q2g0DNZnseSWfWtFq6tJDLsO1QBIhW2XL2FqSDtqmr405J%252fQXVNh%252bXDZUHj%252f; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20319%7CMCMID%7C18738664442014422470041236350715880402%7CMCAAMLH-1756146316%7C7%7CMCAAMB-1756146316%7C6G1ynYcLPuiQxYZrsz_pkqfLG9yMXBpb2zX5dvJdYQJzPXImdj0y%7CMCOPTOUT-1755548716s%7CNONE%7CvVersion%7C5.1.1' \
+  -H 'priority: u=0, i' \
+  -H 'referer: https://www.linkedin.com/' \
+  -H 'sec-ch-ua: "Chromium";v="135", "Not-A.Brand";v="8"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Linux"' \
+  -H 'sec-fetch-dest: document' \
+  -H 'sec-fetch-mode: navigate' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-user: ?1' \
+  -H 'upgrade-insecure-requests: 1' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'

@@ -71,3 +71,4 @@ select yp.name,yp.website,e.email from yp.yellow_pages yp join email e on e.webs
 
 --load emails
 \copy track_email_load (email,name,website, cid) from '/tmp/dog_training.csv';
+insert into track_email (email,name,website, cid) select email,name,website, cid from track_email_load on conflict (email,cid) do nothing;

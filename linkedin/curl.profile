@@ -1,0 +1,14 @@
+curl-impersonate-chrome 'https://in.linkedin.com/in/sunil-ta-advisor?trk=people-guest_people_search-card&original_referer=https%3A%2F%2Fwww.linkedin.com%2F' \
+  -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -b 'bcookie="v=2&15b5a76d-11ba-4786-8af2-2afdbaac07d6"; lidc="b=VGST08:s=V:r=V:a=V:p=V:g=3296:u=1:x=1:i=1755532720:t=1755619120:v=2:sig=AQH-gXAGeNBDRpkgvq8ZQPhsSShu9I9G"; dfpfpt=cb1ace031b3644d5a2ebdc6fc5a2de36; lang=v=2&lang=en-us; __cf_bm=havoL6vVKSBEWvvSodlxJ_ABBRtZuGIgQecXm3rJvJU-1755535521-1.0.1.1-s2kcHrn9ce72MpTUHjheZ_mNSm7O3qMV6EBaotUqrXLIAIDCNB3Jw1vG.pGDGyf43A.OcsBdRDaNtUBlKBB0.C5LvlawnjgOhK7cAMbG.ak; AMCVS_14215E3D5995C57C0A495C55%40AdobeOrg=1; AMCV_14215E3D5995C57C0A495C55%40AdobeOrg=-637568504%7CMCIDTS%7C20319%7CMCMID%7C18738664442014422470041236350715880402%7CMCAAMLH-1756140322%7C7%7CMCAAMB-1756140322%7C6G1ynYcLPuiQxYZrsz_pkqfLG9yMXBpb2zX5dvJdYQJzPXImdj0y%7CMCOPTOUT-1755542722s%7CNONE%7CvVersion%7C5.1.1; fptctx2=taBcrIH61PuCVH7eNCyH0I1otfYAPn9VOPY9aMX8tO3rUhCnbliKCQe1XJZMT494RUlvlmBu%252bhaewIAlPprwbQWsZg7cEexGlrmzz0X4ojK79fqjYdR8r5HWBpqOnw0YnzlH5SMJH86LaWJI3z%252fwCkYbsglEx%252brDZWbZ1R%252f5YGn1W6WGKyNn%252bwiAEidpELBmtZwGxXanMMjX5OHuTaoEM3X6uz8Wu%252bqg916GaW834addmYfHDgE7ST7AFeGJcY8ngrhfl3jYKB1fptFfwIYLhXf3nABmoUAuWRgR5%252fSafJFyVDKHaTH3QZMwwC%252f3nt%252f7UEY12twE8yUErN86DFT0OGDokcFWNrJjKy8Cd24yJdLB1kdE1oU93sf6F0EiERHO; aam_uuid=19315875602930258040026369598789128217; recent_history=AQEQUEcxMVDjOQAAAZi-EuYY-jwf7mZdWcafJfb1kcK7VWy8OlYEgtUQ3G76Y0GsLhY1kx0U8xpEODnOxsWcjWiyyM_Di_YgZg_sYZp4cBjEZu5hAhBbOo31SBzf87Cs9rkit1yaLY45eb_isis-hdvBcSJaZzEkLRAozlwo-BNy05jEMMPHNyN4LYidxuxWXe2hHZEMVWaey8cS0DLcQ2aXMaZn1HaUKzWC4CsozaCaq4Vl4jJKhu_6ywHr1w; bscookie="v=1&202508181647001b42c50a-6d40-4b35-8371-6060da89fc0bAQFpeCtVNTVQeCZ-zb72S_kDxVdRmk63"; ccookie=0001AQFvGLH5J1lr+QAAAZi+E79wyyDOWYC9GVrWvUPdqUyvXYNZ7jMOWHoHlRYG55BnjbQxOtzIQr6Yfy6BM+K09tC7/7L6fSyld3hBujqAoHbfAdjt2PX8Mj2EeWlApvSOoZD0wRtqI3Rm6DjIbJDa71b0Q1DotYqU9rPBbPATQxnSGLk7uf7VKA4mo5cdQTtOGw==|/MfjY+CgSzCjEiVYpsGpVwuTWXvpUB97pvSfiyIF1rQ=' \
+  -H 'priority: u=0, i' \
+  -H 'referer: https://in.linkedin.com/in/sunil-ta-advisor?trk=people-guest_people_search-card' \
+  -H 'sec-ch-ua: "Chromium";v="135", "Not-A.Brand";v="8"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Linux"' \
+  -H 'sec-fetch-dest: document' \
+  -H 'sec-fetch-mode: navigate' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'upgrade-insecure-requests: 1' \
+  -H 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
