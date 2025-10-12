@@ -8,6 +8,8 @@ use Data::Dumper;
 use LWP::UserAgent ();
 use HTTP::CookieJar::LWP ();
 use Try::Tiny;
+use FindBin;
+use File::Spec;
 use List::Util qw(
           reduce any all none notall first reductions
           max maxstr min minstr product sum sum0
@@ -22,13 +24,15 @@ use Scalar::Util qw(blessed dualvar isdual readonly refaddr reftype
 
 my $TIKTOK = 0;
 my $MAKE = 0;
+my $N8N = 1;
 my $q = CGI->new;
+our $logFile = File::Spec->catpath($FindBin::Bin, 'webhook.log');
 
 sub postJSON
 {
 	my ($endpoint, $payload, $header, $logFH) = @_;
 	if (not defined openhandle($logFH)) {
-		open $logFH, '>>', 'webhook.log' or die "cannot open webhook.log: $!";
+		open $logFH, '>>', $logFile or die "cannot open $logFile: $!";
 		print $logFH "opened log at " . scalar(localtime) . ":\n";
 	}
 	print $logFH "posting to webhook [$endpoint]\n";
@@ -82,7 +86,7 @@ if ($@) {
 }
 
 # Process the received data (example: log it)
-open my $fh, '>>', 'webhook.log' or die "Cannot open webhook.log: $!";
+open my $fh, '>>', $logFile or die "Cannot open $logFile: $!";
 print $fh "Received webhook at " . scalar(localtime) . ":\n";
 my @names = $q->param;
 foreach my $k (@names) {
@@ -96,6 +100,8 @@ print $fh Dumper($data);
 # Send a success response
 print encode_json({ status => 'success', message => 'Webhook received and processed' });
 
+#  fastfunnels form submit webhook
+#
 if (exists $data->{formName}) {
 	if ($TIKTOK) {
 		print $fh "calling tiktok webhook\n";
@@ -131,7 +137,22 @@ if (exists $data->{formName}) {
 			$fh
 		);
 	}
+
+	my $c = $data->{contact};
+	my $message = sprintf("HappyTailsPawCare\nform %s\n%s\n%s\n%s\ntags [%s]", $data->{formName},$c->{name}, $c->{phone}, $c->{email}, join(',',@{$c->{tags}}));
+	print $fh "sent text [$message]\n";
+	`voip.ms.rest.pl -m "$message"`;
 } else {
+	#  voip.ms ssm/mms recieved
+	#
+	if (exists $data->{data} and exists $data->{data}->{event_type} and $data->{data}->{event_type} eq 'message.recieved') {
+		my $text = $data->{data}->{payload};
+		print $fh 'recieved '.$text->{type} . " from ".$text->{from}->{phone_number}."\n".$text->{text}."\n";
+		`voip.ms.rest.pl -p`;
+	}
+
+	#  contact insert/update from fastfunnels.com
+	#
 	my @contact = qw/email name id phone properties/;
 	my $c = sum map { exists $data->{$_} && 1; } @contact;
 	if ($c == ($#contact + 1)) {
@@ -144,9 +165,16 @@ if (exists $data->{formName}) {
 			my $payload = $data;
 			my $res = postJSON( 
 				"https://hook.us2.make.com/lwkxmdiw5bepvsv9fcqjr7aqptkwfisa", #call hook
-				#  "https://hook.us2.make.com/oam2fwkyu6cq4juftx1r7ecyn1u1b330",  #calendar hook
 				$payload, $header, $fh
 			);
+		}
+		if ($N8N) {
+			my $payload = $data;
+			my $endpoint = 'https://leadtinfo.com:5678/webhook/CRMcontact';
+			if (exists $payload->{n8n_test}) {
+				$endpoint = 'https://leadtinfo.com:5678/webhook-test/CRMcontact';
+			}
+			my $res = postJSON($endpoint, $payload, {'webhook-auth' => '8yZe6An6nat4QNM'}, $fh);
 		}
 
 	}
