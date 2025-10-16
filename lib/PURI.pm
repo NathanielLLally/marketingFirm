@@ -123,4 +123,14 @@ sub parse
 	return \%urlParts;
 }
 
+sub asStr {
+    my $u = shift;
+    $u->{fqdn} = join('.', $u->{host}, $u->{domain});
+    my $out = sprintf("%s://%s%s", $u->{scheme}, $u->{fqdn}, $u->{path});
+    if (defined $u->{query}) {
+        $out .= '?'.$u->{query};
+    }
+    return $out;
+}
+
 1;
