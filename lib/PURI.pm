@@ -126,7 +126,11 @@ sub parse
 sub asStr {
     my $u = shift;
     $u->{fqdn} = join('.', $u->{host}, $u->{domain});
-    my $out = sprintf("%s://%s%s", $u->{scheme}, $u->{fqdn}, $u->{path});
+    my $out = $u->{path};
+    if (defined $u->{scheme}) {
+        $out =~ s/^\///;
+        $out = sprintf("%s://%s/%s", $u->{scheme}, $u->{fqdn}, $out);
+    }
     if (defined $u->{query}) {
         $out .= '?'.$u->{query};
     }
