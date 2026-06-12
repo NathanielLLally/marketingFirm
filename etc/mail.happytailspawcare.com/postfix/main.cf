@@ -95,7 +95,7 @@ mail_owner = postfix
 # from gethostname(). $myhostname is used as a default value for many
 # other configuration parameters.
 #
-myhostname = mail.obiseo.net
+myhostname = mail.happytailspawcare.com
 #myhostname = virtual.domain.tld
 
 # The mydomain parameter specifies the local internet domain name.
@@ -103,7 +103,7 @@ myhostname = mail.obiseo.net
 # $mydomain is used as a default value for many other configuration
 # parameters.
 #
-mydomain = obiseo.net
+mydomain = happytailspawcare.com
 
 # SENDING MAIL
 # 
@@ -747,8 +747,8 @@ virtual_alias_maps = hash:/etc/postfix/virtual
 #virtual_alias_maps = pgsql:/etc/postfix/pgsql.delivery_status.cf
 
 smtpd_use_tls = yes
-smtpd_tls_cert_file = /etc/letsencrypt/live/mail.obiseo.net/fullchain.pem
-smtpd_tls_key_file = /etc/letsencrypt/live/mail.obiseo.net/privkey.pem
+smtpd_tls_cert_file = /etc/letsencrypt/live/mail.happytailspawcare.com/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/mail.happytailspawcare.com/privkey.pem
 smtp_tls_security_level = may
 smtpd_tls_security_level = may
 smtp_tls_loglevel = 1
@@ -816,8 +816,8 @@ content_filter = domainratelimit:dummy
 canonical_maps = hash:/etc/postfix/canonical
 smtpd_reject_unlisted_recipient = yes
 notify_classes = bounce, 2bounce, delay, policy, protocol, resource, software
-bounce_notice_recipient = bounces@obiseo.net
-2bounce_notice_recipient = bounces@obiseo.net
+bounce_notice_recipient = bounces@happytailspawcare.com
+2bounce_notice_recipient = bounces@happytailspawcare.com
 internal_mail_filter_classes = bounce notify
 
 
