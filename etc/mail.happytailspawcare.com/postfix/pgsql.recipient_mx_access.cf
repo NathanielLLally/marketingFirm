@@ -1,0 +1,18 @@
+#
+# pgsql config file for local(8) aliases(5) lookups
+#
+
+#
+# The hosts that Postfix will try to connect to
+hosts = mail.happytailspawcare.com
+
+# The user name and password to log into the pgsql server.
+user = postgres
+#password = 
+
+# The database name on the servers.
+dbname = postgres
+
+# Postfix 2.2 and later The SQL query template. See pgsql_table(5).
+# select count(*) from mx.smtp_status where mx = 'mail.leadtinfo.com' and updated > now() - interval '1 day';
+query = insert into mx.recipient_mx (mx) values ('%s')

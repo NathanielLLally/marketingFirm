@@ -1,0 +1,7 @@
+/.*?happytailspawcare.com/	localmail:
+/.*?accurateleadinfo.com/	mynetwork:
+/.*?leadtinfo.com/	mynetwork:
+/.*?winblows98.com/	mynetwork:
+/.*/ smtp:
+#/.*/ domainratelimit:
+

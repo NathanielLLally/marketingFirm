@@ -1,0 +1,6 @@
+hosts = mail.happytailspawcare.com
+user = postgres
+dbname = postgres
+
+# Postfix 2.2 and later The SQL query template. See pgsql_table(5).
+query = select replacement from mx.postfix_virtual where mailbox = '%s'
