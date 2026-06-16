@@ -96,6 +96,7 @@ foreach my $row (@$rs) {
 		$minlen = length($status) if (length($status) < $minlen);
 		if ($minlen > 0 and substr($status,0,$minlen) eq substr($munge,0,$minlen)) {
 			print sprintf("local q id %s rcpt %s from %s mx %s status %s\n", $qid, $qidNfo{$qid}->{to}, $qidNfo{$qid}->{from}, $qidNfo{$qid}->{mx}, $status);
+			print LOG sprintf("local q id %s rcpt %s from %s mx %s status %s\n", $qid, $qidNfo{$qid}->{to}, $qidNfo{$qid}->{from}, $qidNfo{$qid}->{mx}, $status);
 			#print LOG sprintf("local q id %s addr %s mx %s status %s\n", $lqid, $addr, $mx, $status);
 			#    print LOG sprintf("local q id %s addr %s mx %s status %s\n", $lqid, $addr, $mx, $status);
 			#    print LOG "updated rows: ".$rv->{processed}."\n";
