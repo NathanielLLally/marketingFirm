@@ -173,7 +173,7 @@ $cbs{eom} = sub {
 my $milter = new Sendmail::PMilter;
 
 #$milter->auto_setconn($miltername);
-$milter->setconn('inet:8892');
+$milter->setconn('inet:8893');
 
 #$milter->register($miltername, \%cbs, SMFI_CURR_ACTS);
 $milter->register($miltername, \%cbs, SMFI_CURR_ACTS);

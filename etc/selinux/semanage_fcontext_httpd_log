@@ -1,0 +1,1 @@
+sudo semanage fcontext -a -t httpd_log_t /home/devel/lighttpd(/.*)?
