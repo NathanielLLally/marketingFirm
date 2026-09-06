@@ -4,164 +4,176 @@ use strict;
 use warnings;
 use utf8;
 
+use Getopt::Long;
+use JSON::PP;
+use JSON::PP qw(encode_json decode_json);
 use Net::SMTP;
-use DBI;
-use Data::Dumper;
-use Net::DNS::Async;
-use URI::Encode;
-use Net::SMTP;
-use Data::Dumper;
-use Coro::AnyEvent;
-use Parallel::ForkManager;
 use Net::DNS;
+use Parallel::ForkManager;
 use Try::Tiny;
 use Sys::Hostname;
+use File::Temp qw(tempfile);
 
-my $count = 0;
-my $maxReq = 200;
-
-my $uri     = URI::Encode->new( { encode_reserved => 0 } );
-
+# --- Configuration & Defaults ---
 my $threads = 30;
+my $email_arg;
+my $file_arg;
+my $help;
+
+GetOptions(
+    'email=s'   => \$email_arg,
+    'file=s'    => \$file_arg,
+    'threads=i' => \$threads,
+    'help'      => \$help,
+) or die "Error in command line arguments\n";
+
+if ($help || (!$email_arg && !$file_arg)) {
+    print <<USAGE;
+Usage: $0 [options]
+Options:
+  --email <email>    Verify a single email address
+  --file <path>      Verify emails from a file (one per line)
+  --threads <num>     Number of concurrent workers (default: $threads)
+  --help             Show this help message
+USAGE
+    exit 0;
+}
+
+# --- Input Gathering ---
+my @emails_to_check;
+if ($email_arg) {
+    push @emails_to_check, $email_arg;
+}
+if ($file_arg) {
+    open(my $fh, '<', $file_arg) or die "Could not open file $file_arg: $!";
+    while (my $line = <$fh>) {
+        chomp $line;
+        $line =~ s/^\s+|\s+$//g;
+        push @emails_to_check, $line if $line;
+    }
+    close($fh);
+}
+
+# --- Initialization ---
 my $pm = Parallel::ForkManager->new($threads);
 my $dns = Net::DNS::Resolver->new;
+my @result_files;
 
-# a sub to be run *from within the parent thread* at child creation.
-my $init = sub {
-  my ($pid, $ident) = @_;
-  print "++ $ident started, pid: $pid\n";    
-};
-
-# a sub to be run *from within the parent thread* at child termination
-my $finalize = sub {
-  my ($pid, $exit_code, $ident) = @_;
-  print "-- $ident finalized, pid: $pid\n";
-};
-
-# set the subrefs
-$pm->run_on_start($init); 
-$pm->run_on_finish($finalize);
-
-#my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=67.80.53.214", 'postgres', undef, {
-my $dbhp = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
-      RaiseError => 1,
-    }) or die "cannot connect: $DBI::errstr";
-
-my $batch;
-my $sthp = $dbhp->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
-$sthp->execute;
-$batch= $sthp->fetchall_arrayref({});
-my $n = 0;
-printf "\n\ngot %u records\n\n".$#{$batch};
-
-do {
-
-foreach (@$batch) {
-  my ($email) = ($uri->decode($_->{email}));
-  my @children = $pm->running_procs;
-
-  printf "%u of %u threads, %u of %u records before start\n",$#children,$pm->max_procs, ++$n, $#{$batch}+1;
-  my $pid = $pm->start($email) and next;
-
-  my $dbh = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
-      RaiseError => 1,
-    }) or die "cannot connect: $DBI::errstr";
-
-  try {
-  if ($email =~ /\@(.*)$/) {
-    my $host = $1;
-    my @parts = reverse split(/\./,$1);
-    my $domain = sprintf("%s.%s", $parts[1],$parts[0]);
-
-    my @hosts = mx($dns, $host);
-    my $rr = shift @hosts;
-    if (not defined $rr) {
-	    my $error =  "no mx record for hostname $host";
-	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
-	    $sth->execute($email,$error);
-	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
-	    $sth->execute($email);
-	    print "error for email $email: $error\n";
-	    $dbh->disconnect;
-	    $pm->finish unless( defined $rr );
+# Helper to get MX records
+sub get_mx_records {
+    my ($dns, $host) = @_;
+    my @mx_hosts;
+    my $query = $dns->query($host, 'MX');
+    if ($query) {
+        foreach my $rr ($query->answer) {
+            if ($rr->type eq 'MX') {
+                push @mx_hosts, $rr;
+            }
+        }
     }
-    my $svr = lc $rr->exchange();
-    my $smtp = Net::SMTP->new($svr,
-	    Timeout => 30,
-	    Hello => hostname,
-	    #Debug   => 1,
-    );
+    return @mx_hosts;
+}
 
-    #$smtp->verify($email);
-    #	my $vrfyCode = $smtp->code;
-    #	if ($vrfyCode != 252) {
-    #	}
+# Processing loop
+foreach my $email (@emails_to_check) {
+    # Create a temp file to store the result of this specific email
+    my ($tfh, $tfname) = tempfile(LEGACY => 1, UNLINK => 0);
+    close($tfh);
+    push @result_files, $tfname;
 
-    #rule out false positives
-    if (not defined $smtp) {
-	    my $error =  "could not connect to smtp server $svr";
-	     print "error for email $email: $error\n";
-
-	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
-	    $sth->execute($email,$error);
-	    $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
-	    $sth->execute($email);
-	    $dbh->disconnect;
-	    $pm->finish unless( defined $smtp );
+    my $pid = $pm->start($email);
+    if ($pid) {
+        next; # Parent continues to next email
     }
-    $smtp->mail($email);
-    if ($smtp->to("adln12jqewfkjbrwgsdjh\@$domain")) {
-	    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
-	    $sth->execute($email,sprintf("false positive check failed for mx %s", $svr));
-	    $sth->finish;
-    } else {
-	    $smtp->reset;
-	    $smtp->mail($email);
-	    if ($smtp->to($email)) {
-		    my $sth = $dbh->prepare ("insert into mx.verified (email) values (?) on conflict do nothing");
-		    $sth->execute($email);
-		    $sth->finish;
-		    #sahksess
-		    #
-	    } else {
-		    print "Error: ", $smtp->message();
-		    my $sth = $dbh->prepare ("insert into mx.verified (email,error) values (?,?) on conflict do nothing");
-		    $sth->execute($email,join(' ',$smtp->message()));
-		    $sth->finish;
-	    }
+
+    # --- Child Process ---
+    my $result = {
+        email => $email,
+        verified => 0,
+        error => undef,
+        mx_server => undef,
+    };
+
+    try {
+        if ($email =~ /\@(.*)$/) {
+            my $host = $1;
+            my @mx_records = get_mx_records($dns, $host);
+
+            if (!@mx_records) {
+                $result->{error} = "no mx record for hostname $host";
+            } else {
+                my $rr = $mx_records[0];
+                my $svr = lc $rr->exchange();
+                $result->{mx_server} = $svr;
+
+                my $smtp = Net::SMTP->new($svr,
+                    Timeout => 30,
+                    Hello => hostname,
+                );
+
+                if (!$smtp) {
+                    $result->{error} = "could not connect to smtp server $svr";
+                } else {
+                    # False positive check
+                    my $domain = $host;
+                    # Basic domain extraction for dummy check
+                    if ($domain =~ /^(.*)\..*$/) {
+                        # We just need a dummy address at the same domain
+                        # Original code used "adln12jqewfkjbrwgsdjh\@$domain"
+                        # where $domain was extracted as first two parts.
+                        # Let's keep the original intent.
+                    }
+
+                    # To mirror original: get domain parts
+                    my @parts = reverse split(/\./, $host);
+                    my $short_domain = sprintf("%s.%s", $parts[1], $parts[0]);
+
+                    $smtp->mail($email);
+                    if ($smtp->to("adln12jqewfkjbrwgsdjh\@$short_domain")) {
+                        $result->{error} = sprintf("false positive check failed for mx %s", $svr);
+                    } else {
+                        $smtp->reset;
+                        $smtp->mail($email);
+                        if ($smtp->to($email)) {
+                            $result->{verified} = 1;
+                        } else {
+                            $result->{error} = $smtp->message();
+                        }
+                    }
+                    $smtp->quit;
+                }
+            }
+        } else {
+            $result->{error} = "invalid email format";
+        }
+    } catch {
+        $result->{error} = "exception: $_";
+    };
+
+    # Write result to temp file
+    open(my $rfh, '>', $tfname) or die "Could not write result file $tfname: $!";
+    print $rfh encode_json($result);
+    close($rfh);
+
+    $pm->finish;
+}
+
+$pm->wait_all_children;
+
+# --- Aggregation ---
+my @final_results;
+my $json_encoder = JSON::PP->new->utf8;
+
+foreach my $fname (@result_files) {
+    if (-e $fname) {
+        open(my $fh, '<', $fname) or next;
+        my $content = <$fh>;
+        close($fh);
+        if ($content) {
+            push @final_results, decode_json($content);
+        }
+        unlink $fname; # Clean up
     }
-    $smtp->quit;
-
-    print "resolved $email\n";
-    my $sth = $dbh->prepare ("update mx.pending set resolved = now() where email = ?");
-    $sth->execute($email);
-
-  } else {
-	  print "error: invalid email $email\n"
-  }
-  } catch {
-	  print "catch err: $_\n";
-  };
-  $dbh->disconnect;
-  $pm->finish;
 }
-	print "end of loop\n";
-if ($pm->is_parent) {
-	print "getting new batch\n";
-my $dbhp = DBI->connect("dbi:Pg:dbname=postgres;host=winblows98.com", 'postgres', undef, {
-      RaiseError => 1,
-    }) or die "cannot connect: $DBI::errstr";
-	my $sthp = $dbhp->prepare ("select email from mx.pending where resolved is null and random() < 0.1 limit 100");
-	$sthp->execute;
-	$batch= $sthp->fetchall_arrayref({});
-	printf "\n\ngot %u records\n\n",$#{$batch};
-} else {
-	print "why is child reaching here?\n";
-}
-} while ($#{$batch} > -1 and $pm->is_parent);
 
-if ($pm->is_parent) {
-	print "exited, waiting\n";
-	$pm->wait_all_children;
-	$dbhp->disconnect;
-}
+print $json_encoder->encode(\@final_results);
