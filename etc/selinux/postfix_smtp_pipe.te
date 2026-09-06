@@ -1,0 +1,16 @@
+
+module postfix_smtp_pipe 1.0;
+
+require {
+	type var_log_t;
+	type user_home_t;
+	type postfix_pipe_t;
+	class file { append getattr ioctl };
+}
+
+#============= postfix_pipe_t ==============
+
+#!!!! This avc is allowed in the current policy
+#!!!! This av rule may have been overridden by an extended permission av rule
+allow postfix_pipe_t user_home_t:file { getattr ioctl };
+allow postfix_pipe_t var_log_t:file append;
