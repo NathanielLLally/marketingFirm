@@ -90,7 +90,24 @@ my @urls;
 my $begin =  join '', "$0 ",@ARGV," at ", scalar localtime(), "\n";
 
 
+#
+# --retry-failures: in bootstrap mode, re-fetch only the categories whose last
+# attempt did not return 200 (including ones never attempted), instead of all
+# of them, and keep the city URLs already discovered. Parsed out of @ARGV
+# before the positional mode argument so it can appear on either side of it.
+#
+my $retryFailures = 0;
+@ARGV = grep { $_ eq '--retry-failures' ? (($retryFailures = 1), 0) : 1 } @ARGV;
+
 my $Pcat = shift @ARGV;
+
+if ($retryFailures and (not defined $Pcat or $Pcat eq "pending")) {
+  # Without this the flag would be silently ignored: no mode argument falls
+  # through to the worker loop, which knows nothing about category status.
+  print STDERR "--retry-failures only applies to bootstrap mode. Run:\n";
+  print STDERR "  $0 bootstrap --retry-failures\n";
+  exit 2;
+}
 
 $SIG{HUP} = sub {
   print "process began @\t$begin\n";
@@ -120,9 +137,15 @@ sub send_url {
 
       if ($res->is_success) {
         print "parsing\n";
-        my $parser = new HTML::TreeBuilder::Select; 
+        my $parser = new HTML::TreeBuilder::Select;
         $parser->parse_content($res->decoded_content()) || croak;
         $cb->($url,$parser);
+      } elsif (defined $u->{on_fail}) {
+        # Caller tracks its own failures (bootstrap's category fetches live in
+        # yellow_pages_categories, not pending_yp, so the UPDATE below would
+        # match zero rows and lose the failure silently).
+        print $res->status_line . "\n";
+        $u->{on_fail}->($url, $res->code);
       } else {
         # Record every non-success status, not just 404. Previously anything
         # else (403 bot-block, 5xx, timeout) was printed and left unresolved,
@@ -145,13 +168,38 @@ sub send_url {
 }
 
 #
+# Record the outcome of a bootstrap category fetch. This is the only place
+# category failures are persisted; --retry-failures selects on these columns.
+#
+sub record_category_status {
+  my ($category, $code) = @_;
+  try {
+    my $sth = $dbh->prepare("update yellow_pages.yellow_pages_categories
+                                set status = ?, fetched = now() where category = ?");
+    $sth->execute($code, $category);
+    $sth->finish;
+  } catch {
+    warn "Error recording status $code for category $category: $_\n";
+  };
+}
+
+#
 # Clear pending_yp and refill it from yellow_pages_citycat, assigning each
 # row a random host from @fleet. Returns the number of rows queued.
 #
 sub rebuild_queue {
-  my $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
-  $sth->execute();
+  my (%opt) = @_;
 
+  # preserve => 1 keeps existing rows and their resolved/status values, adding
+  # only newly discovered URLs. --retry-failures uses this so repairing a
+  # partial bootstrap doesn't discard crawl progress already made.
+  if (not $opt{preserve}) {
+    my $del = $dbh->prepare("delete from yellow_pages.pending_yp");
+    $del->execute();
+    $del->finish;
+  }
+
+  my $sth;
   # random() is volatile, so the subscript is re-evaluated per output row.
   # (A LATERAL subquery here would be uncorrelated and assign every row the
   # same host - verified against PostgreSQL, don't "simplify" it back.)
@@ -228,16 +276,37 @@ if (defined $Pcat and $Pcat eq "pending") {
 
   print "\nStep 2: Fetching per-city URLs for each category\n";
 
-  my $sth = $dbh->prepare ("select category from yellow_pages.yellow_pages_categories order by category");
+  my $sth;
+  if ($retryFailures) {
+    # Only the categories that did not come back 200 last time, plus any that
+    # were never attempted (fetched is null).
+    $sth = $dbh->prepare ("select category from yellow_pages.yellow_pages_categories
+                            where fetched is null or status is distinct from 200
+                            order by category");
+  } else {
+    $sth = $dbh->prepare ("select category from yellow_pages.yellow_pages_categories order by category");
+  }
   $sth->execute();
   my $rs = $sth->fetchall_arrayref({});
 
   if ($#{$rs} < 0) {
+    if ($retryFailures) {
+      print "No failed categories to retry - every category last returned 200.\n";
+      my $kept = rebuild_queue(preserve => 1);
+      print "Queue holds " . $dbh->selectrow_array("select count(*) from yellow_pages.pending_yp")
+          . " URLs ($kept newly added).\n";
+      exit 0;
+    }
     print STDERR "No categories found in database. Bootstrap failed.\n";
     exit 1;
   }
 
-  printf "Found %d categories, discovering city URLs...\n", $#{$rs} + 1;
+  if ($retryFailures) {
+    my $total = $dbh->selectrow_array("select count(*) from yellow_pages.yellow_pages_categories");
+    printf "Retrying %d failed/unattempted categories (of %d total)...\n", $#{$rs} + 1, $total;
+  } else {
+    printf "Found %d categories, discovering city URLs...\n", $#{$rs} + 1;
+  }
 
   # fresh condvar: the Step 1 one has already fired (see above)
   $cv = AnyEvent->condvar;
@@ -246,7 +315,8 @@ if (defined $Pcat and $Pcat eq "pending") {
   foreach my $row (@$rs) {
     my $category = $row->{category};
     my $catUrl = sprintf("https://www.yellowpages.com/categories/%s", $category);
-    push @urls, {url => $catUrl, cb => sub {
+    push @urls, {url => $catUrl,
+      cb => sub {
         my ($url, $parser) = @_;
         my @a = $parser->look_down(_tag => 'a');
         my $cityCount = 0;
@@ -263,7 +333,16 @@ if (defined $Pcat and $Pcat eq "pending") {
             };
           }
         }
+        record_category_status($category, 200);
         print "." if $cityCount > 0;
+      },
+      # send_url()'s generic failure path writes to pending_yp, which never
+      # holds these /categories/<category> URLs - without this hook the
+      # failure would be printed and then lost, and --retry-failures would
+      # have nothing to select on.
+      on_fail => sub {
+        my ($url, $code) = @_;
+        record_category_status($category, $code);
       }};
     send_url();
     $catCount++;
@@ -277,10 +356,23 @@ if (defined $Pcat and $Pcat eq "pending") {
 
   print "\nStep 3: Building crawl queue from discovered URLs\n";
 
-  my $rowsInserted = rebuild_queue();
-  print "Queued $rowsInserted city-category URLs for crawling.\n";
+  # A retry run repairs a partial bootstrap, so it must not wipe the rows the
+  # workers have already resolved - it only adds the newly discovered URLs.
+  my $rowsInserted = rebuild_queue(preserve => $retryFailures);
+  if ($retryFailures) {
+    my $total = $dbh->selectrow_array("select count(*) from yellow_pages.pending_yp");
+    print "Added $rowsInserted new city-category URLs (queue now $total rows).\n";
+  } else {
+    print "Queued $rowsInserted city-category URLs for crawling.\n";
+  }
 
-  if ($rowsInserted == 0) {
+  my $failed = $dbh->selectrow_array("select count(*) from yellow_pages.yellow_pages_categories
+                                       where fetched is null or status is distinct from 200");
+  if ($failed > 0) {
+    print "$failed categories still failing - re-run with --retry-failures to retry just those.\n";
+  }
+
+  if ($rowsInserted == 0 and not $retryFailures) {
     print STDERR "\nNo city-category URLs were discovered - nothing to crawl.\n";
     print STDERR "yellowpages.com's markup may have changed; check the link scraping above.\n";
     exit 1;
