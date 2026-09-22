@@ -58,6 +58,26 @@ if (not defined $CFG->{dB}) {
 my $cv = AnyEvent->condvar;
 my $count = 0;
 
+#
+# Crawler fleet: the hostnames pending_yp rows are sharded across. A worker
+# only ever claims rows whose host matches its own Sys::Hostname::hostname(),
+# so a box missing from this list gets zero work and exits immediately.
+#
+# Override in the config to match your actual fleet:
+#
+#   [crawler]
+#   hosts = mail.htcp.com,mail.obiseo.net
+#
+# With no [crawler] section we shard to this host alone, which is the only
+# safe default: it guarantees the local worker can claim what it queues.
+#
+my @fleet = ($host);
+if (defined $CFG->{crawler} and defined $CFG->{crawler}->{hosts}) {
+  @fleet = grep { length } map { s/^\s+|\s+$//gr } split /,/, $CFG->{crawler}->{hosts};
+  die "config [crawler] hosts is empty" if not @fleet;
+}
+print "sharding queue across: " . join(", ", @fleet) . "\n";
+
 my $disperseTime = 1;
 my $fqcount = {};
 my $maxSameDomain = 10;
@@ -103,17 +123,18 @@ sub send_url {
         my $parser = new HTML::TreeBuilder::Select; 
         $parser->parse_content($res->decoded_content()) || croak;
         $cb->($url,$parser);
-      } elsif ($res->code == 404) {
-        print "not found\n";
+      } else {
+        # Record every non-success status, not just 404. Previously anything
+        # else (403 bot-block, 5xx, timeout) was printed and left unresolved,
+        # so the worker retried it forever and the queue never drained.
+        print $res->status_line . "\n";
         try {
           my $sth = $dbh->prepare ( "update yellow_pages.pending_yp set resolved = now(), status = ? where url = ?");
           $sth->execute ( $res->code, $url );
           $sth->finish;
         } catch {
-          print "update error: $_\n";
+          warn "Error recording status " . $res->code . " for $url: $_\n";
         };
-      } else {
-        print $res->status_line;
       }
 
       $count--;
@@ -123,18 +144,43 @@ sub send_url {
   }
 }
 
+#
+# Clear pending_yp and refill it from yellow_pages_citycat, assigning each
+# row a random host from @fleet. Returns the number of rows queued.
+#
+sub rebuild_queue {
+  my $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
+  $sth->execute();
+
+  # random() is volatile, so the subscript is re-evaluated per output row.
+  # (A LATERAL subquery here would be uncorrelated and assign every row the
+  # same host - verified against PostgreSQL, don't "simplify" it back.)
+  $sth = $dbh->prepare("insert into yellow_pages.pending_yp (url,host)
+    -- the www host is required: https://yellowpages.com/... 301-redirects to
+    -- the homepage, which the worker then parses as an empty listing page and
+    -- marks resolved/200 without extracting anything.
+    select concat('https://www.yellowpages.com', c.url) as url,
+           (?::text[])[1 + floor(random() * array_length(?::text[], 1))::int] as host
+      from yellow_pages.yellow_pages_citycat c
+    on conflict do nothing");
+  $sth->execute(\@fleet, \@fleet);
+
+  my $rows = $sth->rows;
+  $sth->finish;
+  return $rows;
+}
+
 $| = 1;
 
 if (defined $Pcat and $Pcat eq "pending") {
-  my $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
-  $sth->execute();
-  $sth = $dbh->prepare("insert into yellow_pages.pending_yp (url,host)
-    select concat('https://yellowpages.com',url) as url,
-    ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com,mail.winblows98.com}'::text[])[floor(random()*4)]
-    as host
-    from yellow_pages.yellow_pages_citycat
-    ");
-  $sth->execute();
+  my $queued = rebuild_queue();
+  print "Queued $queued city-category URLs for crawling.\n";
+  if ($queued == 0) {
+    print STDERR "yellow_pages.yellow_pages_citycat is empty - run bootstrap first:\n";
+    print STDERR "  $0 bootstrap\n";
+    exit 1;
+  }
+  exit 0;
 
 } elsif (defined $Pcat) {
   # Bootstrap mode: discover categories and city-category combinations
@@ -143,6 +189,10 @@ if (defined $Pcat and $Pcat eq "pending") {
 
   print "=== Bootstrap mode: discovering categories and city-category combinations ===\n";
 
+  # A condvar is single-use: once it fires, every later recv() returns
+  # immediately. Step 2 therefore needs its own, or it returns before any
+  # HTTP callback has run and the inserts never happen.
+  $cv = AnyEvent->condvar;
   $cv->begin;
 
   my $url = "https://www.yellowpages.com/categories";
@@ -152,7 +202,8 @@ if (defined $Pcat and $Pcat eq "pending") {
       my @a = $parser->look_down(_tag => 'a');
       my $count = 0;
       foreach my $el (@a) {
-        if ($el->attr('href') =~ /categories\/([\w\-]+)/) {
+        # anchors without href (named targets, JS handlers) are common here
+        if (defined $el->attr('href') and $el->attr('href') =~ /categories\/([\w\-]+)/) {
           try {
             my $cat = $1;
             my $sth = $dbh->prepare ("INSERT into yellow_pages.yellow_pages_categories (category) values (?) on conflict(category) do nothing");
@@ -188,6 +239,8 @@ if (defined $Pcat and $Pcat eq "pending") {
 
   printf "Found %d categories, discovering city URLs...\n", $#{$rs} + 1;
 
+  # fresh condvar: the Step 1 one has already fired (see above)
+  $cv = AnyEvent->condvar;
   $cv->begin;
   my $catCount = 0;
   foreach my $row (@$rs) {
@@ -224,26 +277,23 @@ if (defined $Pcat and $Pcat eq "pending") {
 
   print "\nStep 3: Building crawl queue from discovered URLs\n";
 
-  # Clear and rebuild the queue
-  $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
-  $sth->execute();
-  print "Queue cleared.\n";
-
-  $sth = $dbh->prepare("insert into yellow_pages.pending_yp (url,host)
-    select concat('https://yellowpages.com',url) as url,
-    ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com,mail.winblows98.com}'::text[])[floor(random()*4)]
-    as host
-    from yellow_pages.yellow_pages_citycat
-    ");
-  $sth->execute();
-
-  my $rowsInserted = $sth->rows;
+  my $rowsInserted = rebuild_queue();
   print "Queued $rowsInserted city-category URLs for crawling.\n";
+
+  if ($rowsInserted == 0) {
+    print STDERR "\nNo city-category URLs were discovered - nothing to crawl.\n";
+    print STDERR "yellowpages.com's markup may have changed; check the link scraping above.\n";
+    exit 1;
+  }
+
   print "\n=== Bootstrap complete ===\n";
   print "Run with 'pending' argument to rebuild queue, or no argument to start workers.\n";
 
   exit 0;
 }
+
+# the worker reuses $cv below; make sure it is a fresh one
+$cv = AnyEvent->condvar;
 
 
 #my $sth = $dbh->prepare ("select url from yellow_pages.pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
@@ -253,6 +303,24 @@ my $sth = $dbh->prepare ("select url from yellow_pages.pending_yp where resolved
 
 $sth->execute($host);
 my $rs = $sth->fetchall_arrayref({});
+
+#
+# No work for this host is almost always a misconfiguration rather than a
+# finished crawl, so say which of the two it is instead of exiting silently.
+#
+if ($#{$rs} < 0) {
+  my $tot = $dbh->selectrow_array("select count(*) from yellow_pages.pending_yp");
+  print STDERR "No unresolved URLs for host '$host'.\n";
+  if ($tot == 0) {
+    print STDERR "The queue is empty. Run:  $0 bootstrap   then:  $0 pending\n";
+  } else {
+    my $hosts = $dbh->selectcol_arrayref(
+      "select distinct coalesce(host,'(null)') from yellow_pages.pending_yp order by 1");
+    print STDERR "Queue holds $tot rows, sharded to: " . join(", ", @$hosts) . "\n";
+    print STDERR "This host is not among them. Add it to [crawler] hosts and re-run '$0 pending'.\n";
+  }
+  exit 1;
+}
 
 $cv->begin;
 

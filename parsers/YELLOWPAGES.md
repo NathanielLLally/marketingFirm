@@ -50,7 +50,24 @@ symlinks.
 dsn  = dbi:Pg:dbname=postgres;host=127.0.0.1
 user = postgres
 pass =
+
+; optional: the crawler fleet the queue is sharded across.
+; Omit this and the queue is sharded to the local host alone.
+[crawler]
+hosts = mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com
 ```
+
+### Sharding and the `[crawler]` section
+
+A worker only claims rows whose `host` column matches its own
+`Sys::Hostname::hostname()`. The fleet used to be a hardcoded list of four
+`mail.*` hosts inside the SQL, so a box outside that list queued work it
+could never claim and printed `got -1` forever.
+
+The fleet now comes from `[crawler] hosts`, defaulting to **the local
+hostname only** — the one value that guarantees a worker can claim what it
+queued. Set `hosts` explicitly when running a real multi-box fleet, and
+make sure every name matches what `hostname` prints on that box.
 
 The config file is not in the repo (it holds a password). Every DB-backed
 script in `parsers/` and `bin/` uses the same `[dB]` section.
@@ -81,27 +98,45 @@ Any argument other than the literal `pending` runs discovery:
 3. Truncate `yellow_pages.pending_yp` and refill it from
    `yellow_pages.yellow_pages_citycat`, then `exit`.
 
-The HTTP calls go through `AnyEvent::UserAgent` (async), and the script now
-properly waits with `$cv->recv` after each fetch phase, so callbacks fire
-and inserts succeed. Progress is printed with step markers and counts.
+The HTTP calls go through `AnyEvent::UserAgent` (async), and each phase waits
+on **its own** condvar before moving on. This matters: an `AnyEvent` condvar
+is single-use, so once Step 1's has fired every later `recv()` on it returns
+immediately. Sharing one condvar across both phases made Step 2 return
+before a single HTTP callback ran, leaving `yellow_pages_citycat` empty and
+every downstream queue rebuild a no-op. Don't collapse these back into one
+condvar.
+
+Bootstrap exits non-zero if it discovers no city URLs, rather than reporting
+success on an empty queue.
 
 ### Mode B — rebuild queue: `yellow_pages.pl pending`
 
 Truncates `yellow_pages.pending_yp` and refills it from
-`yellow_pages.yellow_pages_citycat`, prefixing `https://yellowpages.com`
-and **sharding each row to one of four crawler hosts at random**
-(`:120-129`):
+`yellow_pages.yellow_pages_citycat`, prefixing `https://www.yellowpages.com`
+and sharding each row to a random host from the configured fleet:
 
 ```sql
 insert into yellow_pages.pending_yp (url,host)
-select concat('https://yellowpages.com',url) as url,
-  ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,
-           mail.leadtinfo.com,mail.winblows98.com}'::text[])
-  [floor(random()*4)] as host
-from yellow_pages.yellow_pages_citycat;
+select concat('https://www.yellowpages.com', c.url) as url,
+       (?::text[])[1 + floor(random() * array_length(?::text[], 1))::int] as host
+  from yellow_pages.yellow_pages_citycat c
+on conflict do nothing;
 ```
 
-The host list is hardcoded in the SQL. Edit `:125` to change the fleet.
+Two things here are load-bearing:
+
+- **The `www.` prefix.** `https://yellowpages.com/...` 301-redirects to the
+  homepage. The worker followed that redirect, parsed the homepage as an
+  empty listing page, found no `div.info`, and marked the URL `status = 200`
+  — so the crawl "succeeded" while extracting nothing.
+- **The array subscript, not a `LATERAL` join.** `random()` is volatile so
+  the subscript is re-evaluated per row. A `cross join lateral (... order by
+  random() limit 1)` is *uncorrelated* and assigns every row the same host —
+  verified against PostgreSQL. Don't "simplify" it back.
+
+Mode B now `exit`s when done instead of falling through into the worker
+loop, and exits non-zero when `yellow_pages_citycat` is empty, pointing you
+at bootstrap.
 
 ### Mode C — worker: `yellow_pages.pl` (no arguments)
 
@@ -111,9 +146,10 @@ This is what you run on each crawler box. It claims work by hostname:
 select url from yellow_pages.pending_yp where resolved is null and host = ?
 ```
 
-with `?` bound to `Sys::Hostname::hostname()` (`:42`, `:208-210`). A box
-whose hostname is not one of the four in Mode B's array gets zero rows and
-exits immediately.
+with `?` bound to `Sys::Hostname::hostname()`. A box whose hostname is not
+in the configured fleet gets zero rows — but it now says so explicitly,
+distinguishing an empty queue from a sharding mismatch and naming the hosts
+the queue *is* assigned to, instead of printing `got -1` and exiting.
 
 For each page fetched (max `$maxReqs = 10` in flight, `$maxQueue = 10`
 queued — `:56-57`):
@@ -126,9 +162,10 @@ queued — `:56-57`):
   [Field mapping](#field-mapping) and inserts one row into
   `yellow_pages.yellow_pages_loading` (`:249-328`).
 - **Bookkeeping.** `update yellow_pages.pending_yp set resolved = now(),
-  status = 200` on success (`:333-338`); `status = 404` with `resolved`
-  set on a 404 (`:98-106`). Other statuses are printed but **not**
-  recorded, so those URLs stay `resolved is null` and are retried forever.
+  status = 200` on success; on any non-success response the actual status
+  code is recorded and the row marked resolved. Previously only 404 was
+  recorded, so a 403 or 5xx left the row `resolved is null` forever and the
+  queue never drained.
 
 The outer `do { ... } while` re-queries for unresolved rows and loops until
 the queue drains (`:216-350`).
@@ -153,6 +190,26 @@ Two things to know about this mapping. The `address` fallback writes a
 downstream. And the INSERT is built dynamically from whichever keys got
 populated (`:315-322`), so the column list varies row to row; a listing
 with no parseable locality simply omits `city`/`state`/`zip`.
+
+### Bot protection (read this before planning a big crawl)
+
+As of 2026-09, yellowpages.com returns **HTTP 403 to most automated
+requests** for listing pages, independent of `User-Agent` — it's edge bot
+protection, not a UA check. A verification run got exactly one page through
+out of ten concurrent requests; the rest were blocked or timed out.
+
+So a full crawl will mostly record 403s rather than listings. The code path
+is correct end to end (the one page that succeeded yielded 10 business rows
+with names, phones, and localities), but throughput is limited by the site,
+not the script. Before scheduling a long run, sample a handful of URLs and
+check the status distribution:
+
+```sql
+select status, count(*) from yellow_pages.pending_yp group by status;
+```
+
+Because non-200 statuses are now recorded, that query is meaningful — a
+wall of 403s means the crawl is blocked, not slow.
 
 ### Known rough edges
 
