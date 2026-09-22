@@ -1,0 +1,2 @@
+test@google.com
+test@thisdomainshouldnotexist12345.com
