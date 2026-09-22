@@ -43,9 +43,17 @@ my $host = hostname();
 my $ua = AnyEvent::UserAgent->new;
 
 my $dirname = dirname(__FILE__);
-my $cfgFile = File::Spec->catfile($ENV{HOME}, '.obiseo.conf');
+my $cfgFile = File::Spec->catfile($ENV{HOME}, '.yellow_pages.conf');
+if (not -e $cfgFile) {
+  # fallback to older name for backward compatibility
+  $cfgFile = File::Spec->catfile($ENV{HOME}, '.obiseo.conf');
+}
 print "using config $cfgFile\n";
 our $CFG = Config::Tiny->read( $cfgFile );
+die "cannot read config from $cfgFile: $!" if not defined $CFG;
+if (not defined $CFG->{dB}) {
+  die "config missing [dB] section (dsn, user, pass required)";
+}
 
 my $cv = AnyEvent->condvar;
 my $count = 0;
@@ -98,7 +106,7 @@ sub send_url {
       } elsif ($res->code == 404) {
         print "not found\n";
         try {
-          my $sth = $dbh->prepare ( "update pending_yp set resolved = now(), status = ? where url = ?");
+          my $sth = $dbh->prepare ( "update yellow_pages.pending_yp set resolved = now(), status = ? where url = ?");
           $sth->execute ( $res->code, $url );
           $sth->finish;
         } catch {
@@ -118,94 +126,130 @@ sub send_url {
 $| = 1;
 
 if (defined $Pcat and $Pcat eq "pending") {
-  my $sth = $dbh->prepare("delete from pending_yp");
+  my $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
   $sth->execute();
-  $sth = $dbh->prepare("insert into pending_yp (url,host)
-    select concat('https://yellowpages.com',url) as url, 
+  $sth = $dbh->prepare("insert into yellow_pages.pending_yp (url,host)
+    select concat('https://yellowpages.com',url) as url,
     ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com,mail.winblows98.com}'::text[])[floor(random()*4)]
     as host
-    from yellow_pages_citycat
+    from yellow_pages.yellow_pages_citycat
     ");
   $sth->execute();
 
 } elsif (defined $Pcat) {
+  # Bootstrap mode: discover categories and city-category combinations
+  # Fetch categories from /categories, then per-city URLs from /categories/<category>
+  # Queue the results in pending_yp and exit.
+
+  print "=== Bootstrap mode: discovering categories and city-category combinations ===\n";
 
   $cv->begin;
 
   my $url = "https://www.yellowpages.com/categories";
-  print "fetching categories\n";
+  print "Step 1: Fetching main categories from $url\n";
   push @urls, {url => $url, cb => sub {
       my ($url, $parser) = @_;
       my @a = $parser->look_down(_tag => 'a');
+      my $count = 0;
       foreach my $el (@a) {
         if ($el->attr('href') =~ /categories\/([\w\-]+)/) {
           try {
-            print ".";
-            my $sth = $dbh->prepare ("INSERT into yellow_pages_categories (category) values (?) on conflict(category) do nothing");
-
-            $sth->execute ($1);
+            my $cat = $1;
+            my $sth = $dbh->prepare ("INSERT into yellow_pages.yellow_pages_categories (category) values (?) on conflict(category) do nothing");
+            $sth->execute ($cat);
             $sth->finish;
+            $count++;
+            print ".";
           } catch {
+            warn "Error inserting category $1: $_\n";
           };
 
         }
       }
-      print "fetched\n";
+      print "\nInserted $count categories\n";
     }};
   send_url();
 
   $cv->end;
 
+  # Wait for categories to be fetched and inserted
+  $cv->recv;
 
-  print "\nfetching category cities\n";
+  print "\nStep 2: Fetching per-city URLs for each category\n";
 
-  my $sth = $dbh->prepare ("select category from yellow_pages_categories");
+  my $sth = $dbh->prepare ("select category from yellow_pages.yellow_pages_categories order by category");
   $sth->execute();
   my $rs = $sth->fetchall_arrayref({});
 
+  if ($#{$rs} < 0) {
+    print STDERR "No categories found in database. Bootstrap failed.\n";
+    exit 1;
+  }
+
+  printf "Found %d categories, discovering city URLs...\n", $#{$rs} + 1;
+
   $cv->begin;
+  my $catCount = 0;
   foreach my $row (@$rs) {
-    push @urls, {url => sprintf("%s%s",
-        "https://www.yellowpages.com/categories/",
-        $row->{category}),
-      cb => sub {
+    my $category = $row->{category};
+    my $catUrl = sprintf("https://www.yellowpages.com/categories/%s", $category);
+    push @urls, {url => $catUrl, cb => sub {
         my ($url, $parser) = @_;
         my @a = $parser->look_down(_tag => 'a');
+        my $cityCount = 0;
         foreach my $el (@a) {
-          my $cat = $row->{category};
-          if ($el->attr('href') =~ /$cat/) {
+          if (defined $el->attr('href') and $el->attr('href') =~ /$category/) {
             try {
-              print ".";
-              my $sth = $dbh->prepare ("INSERT into yellow_pages_citycat (url) values (?) on conflict(url) do nothing");
-
-              $sth->execute ($el->attr('href'));
+              my $cityUrl = $el->attr('href');
+              my $sth = $dbh->prepare ("INSERT into yellow_pages.yellow_pages_citycat (url) values (?) on conflict(url) do nothing");
+              $sth->execute ($cityUrl);
               $sth->finish;
+              $cityCount++;
             } catch {
+              warn "Error inserting citycat URL for $category: $_\n";
             };
-
           }
         }
-        print "\n";
+        print "." if $cityCount > 0;
       }};
     send_url();
+    $catCount++;
   }
 
   $cv->end;
-  print "fetched\n";
 
-  my $sth = $dbh->prepare("delete from pending_yp");
+  # Wait for all city URLs to be fetched and inserted
+  print "\nWaiting for all city-category URLs to be fetched...\n";
+  $cv->recv;
+
+  print "\nStep 3: Building crawl queue from discovered URLs\n";
+
+  # Clear and rebuild the queue
+  $sth = $dbh->prepare("delete from yellow_pages.pending_yp");
   $sth->execute();
-  $sth = $dbh->prepare("insert into pending_yp (url) select concat('https://yellowpages.com',url) from yellow_pages_citycat");
+  print "Queue cleared.\n";
+
+  $sth = $dbh->prepare("insert into yellow_pages.pending_yp (url,host)
+    select concat('https://yellowpages.com',url) as url,
+    ('[0:3]={mail.obiseo.net,mail.accurateleadinfo.com,mail.leadtinfo.com,mail.winblows98.com}'::text[])[floor(random()*4)]
+    as host
+    from yellow_pages.yellow_pages_citycat
+    ");
   $sth->execute();
 
-  exit;
+  my $rowsInserted = $sth->rows;
+  print "Queued $rowsInserted city-category URLs for crawling.\n";
+  print "\n=== Bootstrap complete ===\n";
+  print "Run with 'pending' argument to rebuild queue, or no argument to start workers.\n";
+
+  exit 0;
 }
 
 
-#my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
+#my $sth = $dbh->prepare ("select url from yellow_pages.pending_yp where resolved is null and url not like '%page=%' and random() < 0.01 limit 1");
 
-#my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ? and random() < 0.01 limit 10");
-my $sth = $dbh->prepare ("select url from pending_yp where resolved is null and host = ?");
+#my $sth = $dbh->prepare ("select url from yellow_pages.pending_yp where resolved is null and host = ? and random() < 0.01 limit 10");
+my $sth = $dbh->prepare ("select url from yellow_pages.pending_yp where resolved is null and host = ?");
 
 $sth->execute($host);
 my $rs = $sth->fetchall_arrayref({});
@@ -235,10 +279,11 @@ do {
             $pageTotal = int($pageTotalN / $pageN)+1;
             foreach my $n (2..$pageTotal) {
               try {
-                my $sth = $dbh->prepare ("INSERT into pending_yp (url,host) values (?,?) on conflict do nothing");
+                my $sth = $dbh->prepare ("INSERT into yellow_pages.pending_yp (url,host) values (?,?) on conflict do nothing");
                 $sth->execute (sprintf("%s?page=%s",$newurl,$n),$host);
                 $sth->finish;
               } catch {
+                warn "Error queueing pagination URL for page $n: $_\n";
               };
             }
           }
@@ -317,13 +362,14 @@ do {
             my @vals = map { $nfo->{$_} } @keys;
 
             my $sth = $dbh->prepare (
-              sprintf("INSERT into yellow_pages_loading (%s) values (%s)",
+              sprintf("INSERT into yellow_pages.yellow_pages_loading (%s) values (%s)",
                 join(",",@keys), join(",", @q))
             );
 
             $sth->execute (@vals);
             $sth->finish;
           } catch {
+            warn "Error inserting business listing for " . ($nfo->{name} // 'unknown') . ": $_\n";
           };
         }
 
@@ -331,10 +377,11 @@ do {
         #  done parsing, update crawler pending
         #
         try {
-          my $sth = $dbh->prepare ( "update pending_yp set resolved = now(), status = 200 where url = ?");
+          my $sth = $dbh->prepare ( "update yellow_pages.pending_yp set resolved = now(), status = 200 where url = ?");
           $sth->execute ($url);
           $sth->finish;
         } catch {
+          warn "Error marking $url as resolved: $_\n";
         };
 
       }};
